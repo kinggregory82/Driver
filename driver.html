@@ -1,0 +1,538 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>BCC Driver — Delivery Submit</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Oswald:wght@500;600;700&family=Barlow:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  :root {
+    --red: #C41230; --red-dk: #9a0e25; --red-br: #ff2d4a;
+    --ink: #0d0d0d; --panel: #1a1a1a; --panel2: #222;
+    --line: #2c2c2c; --txt: #f0f0f0; --mut: #999;
+    --green: #2fae5a; --amber: #e0a020;
+  }
+  html, body { background: var(--ink); color: var(--txt);
+    font-family: 'Barlow', sans-serif; min-height: 100vh;
+    background-image:
+      radial-gradient(circle at 8% 0%, rgba(196,18,48,0.07) 0%, transparent 38%),
+      radial-gradient(circle at 92% 100%, rgba(196,18,48,0.05) 0%, transparent 42%);
+    background-attachment: fixed;
+  }
+
+  /* HEADER */
+  header { background: linear-gradient(180deg, #1a1a1a, #0f0f0f);
+    border-bottom: 4px solid var(--red); padding: 14px 18px;
+    display: flex; align-items: center; justify-content: space-between;
+    position: sticky; top: 0; z-index: 50; box-shadow: 0 4px 18px rgba(0,0,0,0.55); }
+  .h-title { font-family: 'Oswald', sans-serif; font-size: 17px; font-weight: 700;
+    letter-spacing: 0.16em; text-transform: uppercase; color: var(--red-br);
+    text-shadow: 0 0 16px rgba(196,18,48,0.4); }
+  .h-sub { font-size: 10px; letter-spacing: 0.18em; text-transform: uppercase;
+    color: var(--mut); margin-top: 2px; }
+  .h-fallback { font-family: 'Oswald', sans-serif; font-size: 9px; letter-spacing: 0.14em;
+    text-transform: uppercase; color: var(--amber); border: 1px solid rgba(224,160,32,0.4);
+    padding: 4px 8px; border-radius: 2px; }
+
+  main { max-width: 640px; margin: 0 auto; padding: 18px 16px 120px; }
+
+  /* STEP LABEL */
+  .step-label { font-family: 'Oswald', sans-serif; font-size: 11px; letter-spacing: 0.22em;
+    text-transform: uppercase; color: var(--mut); margin: 22px 0 10px;
+    display: flex; align-items: center; gap: 9px; }
+  .step-label::before { content: ''; width: 18px; height: 2px; background: var(--red); }
+  .step-label:first-child { margin-top: 4px; }
+
+  /* SELECT GRID (drivers / assets) */
+  .pick-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .pick {
+    background: linear-gradient(180deg, var(--panel), #151515);
+    border: 1px solid var(--line); border-radius: 4px;
+    padding: 18px 14px; text-align: left; cursor: pointer;
+    font-family: 'Oswald', sans-serif; color: var(--txt);
+    transition: all 0.12s ease; min-height: 64px;
+    display: flex; flex-direction: column; justify-content: center; gap: 3px;
+  }
+  .pick:active { transform: scale(0.97); }
+  .pick.sel { border-color: var(--red); background: linear-gradient(180deg, #2a1216, #1a0d10);
+    box-shadow: 0 0 0 1px var(--red), 0 4px 14px rgba(196,18,48,0.25); }
+  .pick .nm { font-size: 17px; font-weight: 600; letter-spacing: 0.02em; }
+  .pick .meta { font-size: 12px; color: var(--mut); letter-spacing: 0.04em; font-weight: 500; }
+  .pick.sel .meta { color: #e7a8b2; }
+
+  /* MANUAL FALLBACK */
+  .manual-toggle { margin-top: 12px; text-align: center; }
+  .manual-toggle button { background: none; border: none; color: var(--mut);
+    font-family: 'Oswald', sans-serif; font-size: 11px; letter-spacing: 0.14em;
+    text-transform: uppercase; text-decoration: underline; cursor: pointer; padding: 8px; }
+  .manual-fields { display: none; margin-top: 12px; gap: 10px; flex-direction: column; }
+  .manual-fields.show { display: flex; }
+  .field-input { width: 100%; background: var(--panel); border: 1px solid var(--line);
+    border-radius: 4px; padding: 15px 14px; color: var(--txt);
+    font-family: 'Barlow', sans-serif; font-size: 16px; font-weight: 500; }
+  .field-input:focus { outline: none; border-color: var(--red); }
+  .field-input::placeholder { color: #666; }
+
+  /* STOPS */
+  .stop {
+    background: linear-gradient(180deg, var(--panel), #161616);
+    border: 1px solid var(--line); border-radius: 5px; margin-bottom: 14px;
+    overflow: hidden; box-shadow: 0 3px 12px rgba(0,0,0,0.3);
+  }
+  .stop-head { padding: 14px 16px; display: flex; align-items: flex-start; gap: 12px;
+    border-left: 4px solid var(--red); }
+  .stop-seq { font-family: 'Oswald', sans-serif; font-size: 26px; font-weight: 700;
+    color: var(--red-br); line-height: 1; min-width: 30px; }
+  .stop-info { flex: 1; min-width: 0; }
+  .stop-cust { font-family: 'Oswald', sans-serif; font-size: 17px; font-weight: 600;
+    letter-spacing: 0.02em; }
+  .stop-addr { font-size: 13px; color: var(--mut); margin-top: 3px; line-height: 1.4; }
+  .stop-order { font-family: 'Oswald', sans-serif; font-size: 11px; letter-spacing: 0.08em;
+    color: #777; margin-top: 5px; }
+  .stop-done-flag { font-family: 'Oswald', sans-serif; font-size: 10px; letter-spacing: 0.12em;
+    text-transform: uppercase; color: var(--green); margin-top: 6px; display: none; }
+  .stop.submitted .stop-done-flag { display: block; }
+  .stop.submitted .stop-head { border-left-color: var(--green); }
+
+  .stop-body { padding: 0 16px 16px; }
+
+  /* STATUS BUTTONS */
+  .status-label { font-family: 'Oswald', sans-serif; font-size: 10px; letter-spacing: 0.18em;
+    text-transform: uppercase; color: var(--mut); margin: 4px 0 9px; }
+  .status-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .status-btn { padding: 14px 8px; border: 1px solid var(--line); background: var(--panel2);
+    color: var(--txt); font-family: 'Oswald', sans-serif; font-size: 13px; font-weight: 600;
+    letter-spacing: 0.06em; text-transform: uppercase; border-radius: 4px; cursor: pointer;
+    transition: all 0.12s ease; }
+  .status-btn:active { transform: scale(0.96); }
+  .status-btn.sel { background: var(--red); border-color: var(--red);
+    box-shadow: 0 3px 10px rgba(196,18,48,0.35); }
+  .status-btn.sel.skip { background: #555; border-color: #555; box-shadow: none; }
+
+  /* PHOTOS */
+  .photo-label { font-family: 'Oswald', sans-serif; font-size: 10px; letter-spacing: 0.18em;
+    text-transform: uppercase; color: var(--mut); margin: 16px 0 9px; }
+  .photo-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+  .photo-thumb { position: relative; aspect-ratio: 1; border-radius: 4px; overflow: hidden;
+    border: 1px solid var(--line); }
+  .photo-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .photo-thumb .rm { position: absolute; top: 2px; right: 2px; width: 22px; height: 22px;
+    background: rgba(196,18,48,0.92); color: #fff; border: none; border-radius: 3px;
+    font-size: 15px; line-height: 1; cursor: pointer; font-weight: 700; }
+  .photo-add { aspect-ratio: 1; border: 2px dashed var(--line); border-radius: 4px;
+    background: var(--panel2); color: var(--mut); display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 4px; cursor: pointer;
+    font-family: 'Oswald', sans-serif; font-size: 10px; letter-spacing: 0.1em;
+    text-transform: uppercase; }
+  .photo-add:active { border-color: var(--red); color: var(--red-br); }
+  .photo-add .plus { font-size: 26px; line-height: 1; font-weight: 300; }
+  .photo-add input { display: none; }
+
+  /* PER-STOP SUBMIT */
+  .stop-submit { width: 100%; margin-top: 16px; padding: 16px;
+    background: linear-gradient(135deg, var(--red), var(--red-dk)); color: #fff;
+    border: none; border-radius: 4px; font-family: 'Oswald', sans-serif; font-size: 15px;
+    font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; cursor: pointer;
+    box-shadow: 0 4px 16px rgba(196,18,48,0.3); transition: all 0.12s ease; }
+  .stop-submit:active { transform: scale(0.98); }
+  .stop-submit:disabled { background: #333; color: #666; box-shadow: none; cursor: default; }
+  .stop-submit.done { background: linear-gradient(135deg, #2fae5a, #1f7d3a);
+    box-shadow: 0 4px 16px rgba(47,174,90,0.3); }
+
+  /* EMPTY / LOADING */
+  .note { text-align: center; color: var(--mut); padding: 40px 20px; font-size: 14px; line-height: 1.7; }
+  .spinner { width: 38px; height: 38px; border: 3px solid var(--line); border-top-color: var(--red);
+    border-radius: 50%; animation: spin 0.8s linear infinite; margin: 50px auto 16px; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* TOAST */
+  .toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%) translateY(80px);
+    background: #fff; color: #111; font-family: 'Oswald', sans-serif; font-weight: 600;
+    font-size: 13px; letter-spacing: 0.06em; padding: 14px 22px; border-radius: 4px;
+    box-shadow: 0 8px 30px rgba(0,0,0,0.5); z-index: 100; opacity: 0;
+    transition: all 0.3s cubic-bezier(0.2,0.8,0.2,1); max-width: 90%; text-align: center; }
+  .toast.show { transform: translateX(-50%) translateY(0); opacity: 1; }
+  .toast.err { background: var(--red); color: #fff; }
+  .toast.ok  { background: var(--green); color: #fff; }
+
+  .change-link { display: inline-block; margin-top: 8px; color: var(--mut);
+    font-family: 'Oswald', sans-serif; font-size: 10px; letter-spacing: 0.14em;
+    text-transform: uppercase; text-decoration: underline; cursor: pointer; }
+  .selected-banner { background: var(--panel); border: 1px solid var(--line);
+    border-left: 4px solid var(--green); border-radius: 4px; padding: 12px 15px;
+    display: flex; align-items: center; justify-content: space-between; }
+  .selected-banner .who { font-family: 'Oswald', sans-serif; font-size: 14px; font-weight: 600; }
+  .selected-banner .who span { color: var(--mut); font-weight: 500; }
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <div class="h-title">BCC Driver Submit</div>
+    <div class="h-sub">Delivery Status &amp; Photos</div>
+  </div>
+  <div class="h-fallback">Fallback Mode</div>
+</header>
+
+<main id="app">
+  <div class="spinner"></div>
+  <div class="note">Loading today's routes…</div>
+</main>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ── CONFIG ────────────────────────────────────────────────────────────────
+const DB = 'https://bccsms-27c55-default-rtdb.firebaseio.com';
+const PHOTO_MAX_PX = 1000;
+const PHOTO_QUALITY = 0.70;
+const STATUSES = [
+  { key: 'Arrived',                label: 'Arrived' },
+  { key: 'Delivered',             label: 'Delivered' },
+  { key: 'Delivered No Sig',      label: 'Delivered — No Sig', short: 'Del. No Sig' },
+  { key: 'Skipped',               label: 'Skipped', skip: true },
+];
+
+// ── STATE ─────────────────────────────────────────────────────────────────
+const ST = {
+  routes: {},
+  driver: null,
+  asset: null,
+  manual: false,
+  stops: [],          // resolved stops for chosen driver+asset
+  draft: {},          // stopId -> { status, photos: [dataURL,...] }
+};
+
+// ── DB HELPERS (plain REST, same pattern as dispatcher) ─────────────────────
+async function dbGet(path) {
+  const r = await fetch(`${DB}/${path}.json`);
+  if (!r.ok) throw new Error(`DB ${r.status}`);
+  return r.json();
+}
+async function dbPatch(path, data) {
+  const r = await fetch(`${DB}/${path}.json`, {
+    method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+  if (!r.ok) throw new Error(`DB ${r.status}`);
+  return r.json();
+}
+async function dbPush(path, data) {
+  const r = await fetch(`${DB}/${path}.json`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+  if (!r.ok) throw new Error(`DB ${r.status}`);
+  return r.json();
+}
+
+// ── UTIL ────────────────────────────────────────────────────────────────────
+function esc(s) { return String(s==null?'':s).replace(/[&<>"']/g, c =>
+  ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function todayKey() { return new Date().toISOString().slice(0,10); }
+function toast(msg, kind) {
+  const t = document.getElementById('toast');
+  t.className = 'toast show' + (kind ? ' ' + kind : '');
+  t.textContent = msg;
+  clearTimeout(toast._t);
+  toast._t = setTimeout(() => { t.className = 'toast'; }, 3200);
+}
+
+// Compress an image File to a capped-size JPEG data URL
+function compressImage(file) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      let { width, height } = img;
+      if (width > height && width > PHOTO_MAX_PX) { height = Math.round(height * PHOTO_MAX_PX / width); width = PHOTO_MAX_PX; }
+      else if (height >= width && height > PHOTO_MAX_PX) { width = Math.round(width * PHOTO_MAX_PX / height); height = PHOTO_MAX_PX; }
+      const cv = document.createElement('canvas');
+      cv.width = width; cv.height = height;
+      cv.getContext('2d').drawImage(img, 0, 0, width, height);
+      resolve(cv.toDataURL('image/jpeg', PHOTO_QUALITY));
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('image load failed')); };
+    img.src = url;
+  });
+}
+
+// ── LOAD ──────────────────────────────────────────────────────────────────
+async function load() {
+  try {
+    ST.routes = (await dbGet('routes')) || {};
+  } catch (e) {
+    ST.routes = {};
+  }
+  renderPickDriver();
+}
+
+// Build driver -> [{asset, routeId}] map from today's routes
+function driverIndex() {
+  const dk = todayKey();
+  const map = {};   // driverName -> Set of "asset||routeId"
+  Object.entries(ST.routes).forEach(([rid, r]) => {
+    if (!r || r.date !== dk) return;
+    if (rid === 'UNASSIGNED') return;
+    const drv = (r.driverName || '').trim();
+    if (!drv) return;
+    const asset = [r.asset, r.assetDescription].filter(Boolean).join(' ').trim() || '—';
+    map[drv] = map[drv] || {};
+    map[drv][asset] = map[drv][asset] || [];
+    map[drv][asset].push(rid);
+  });
+  return map;
+}
+
+// ── RENDER: PICK DRIVER ─────────────────────────────────────────────────────
+function renderPickDriver() {
+  const app = document.getElementById('app');
+  const idx = driverIndex();
+  const drivers = Object.keys(idx).sort();
+
+  let html = `<div class="step-label">Step 1 — Who are you?</div>`;
+  if (drivers.length) {
+    html += `<div class="pick-grid">` + drivers.map(d => {
+      const assetCount = Object.keys(idx[d]).length;
+      const stopCount = Object.values(idx[d]).flat().reduce((n, rid) => {
+        const r = ST.routes[rid]; return n + (r && r.stops ? Object.keys(r.stops).length : 0);
+      }, 0);
+      return `<button class="pick" onclick="pickDriver('${esc(d)}')">
+        <span class="nm">${esc(d)}</span>
+        <span class="meta">${stopCount} stop${stopCount===1?'':'s'} today</span>
+      </button>`;
+    }).join('') + `</div>`;
+  } else {
+    html += `<div class="note">No routes seeded for today yet.<br>Use manual entry below.</div>`;
+  }
+
+  html += `<div class="manual-toggle">
+    <button onclick="toggleManual()">Driver not listed? Enter manually</button>
+  </div>
+  <div class="manual-fields" id="manual-fields">
+    <input class="field-input" id="m-driver" placeholder="Your name" autocomplete="name">
+    <input class="field-input" id="m-asset" placeholder="Asset / unit (e.g. 537 Boom)">
+    <button class="stop-submit" onclick="pickManual()">Continue</button>
+  </div>`;
+
+  app.innerHTML = html;
+  if (ST.manual) document.getElementById('manual-fields').classList.add('show');
+}
+
+function toggleManual() {
+  ST.manual = !ST.manual;
+  document.getElementById('manual-fields').classList.toggle('show', ST.manual);
+}
+
+function pickManual() {
+  const d = document.getElementById('m-driver').value.trim();
+  const a = document.getElementById('m-asset').value.trim();
+  if (!d) { toast('Enter your name', 'err'); return; }
+  if (!a) { toast('Enter your asset/unit', 'err'); return; }
+  ST.driver = d; ST.asset = a; ST.manualEntry = true;
+  resolveStops();
+}
+
+function pickDriver(d) {
+  ST.driver = d;
+  const idx = driverIndex();
+  const assets = Object.keys(idx[d] || {});
+  if (assets.length === 1) { ST.asset = assets[0]; resolveStops(); }
+  else renderPickAsset(assets);
+}
+
+// ── RENDER: PICK ASSET ──────────────────────────────────────────────────────
+function renderPickAsset(assets) {
+  const app = document.getElementById('app');
+  app.innerHTML = `
+    <div class="selected-banner">
+      <div class="who">${esc(ST.driver)}</div>
+      <span class="change-link" onclick="resetAll()">Change</span>
+    </div>
+    <div class="step-label">Step 2 — Which asset?</div>
+    <div class="pick-grid">` +
+    assets.sort().map(a => `<button class="pick" onclick="pickAsset('${esc(a)}')">
+      <span class="nm">${esc(a)}</span>
+    </button>`).join('') + `</div>`;
+}
+
+function pickAsset(a) { ST.asset = a; resolveStops(); }
+
+// ── RESOLVE STOPS for chosen driver + asset ─────────────────────────────────
+function resolveStops() {
+  const dk = todayKey();
+  const stops = [];
+  Object.entries(ST.routes).forEach(([rid, r]) => {
+    if (!r || r.date !== dk || rid === 'UNASSIGNED') return;
+    const asset = [r.asset, r.assetDescription].filter(Boolean).join(' ').trim() || '—';
+    const drvMatch = (r.driverName || '').trim() === ST.driver;
+    const assetMatch = asset === ST.asset;
+    // In normal mode require driver+asset match. In manual mode, asset match alone is enough.
+    if (ST.manualEntry ? assetMatch : (drvMatch && assetMatch)) {
+      if (r.stops) Object.entries(r.stops).forEach(([sid, s]) =>
+        stops.push({ routeId: rid, stopId: sid, ...s }));
+    }
+  });
+  stops.sort((a,b) => (a.sequence||0)-(b.sequence||0));
+  ST.stops = stops;
+  // init draft
+  stops.forEach(s => { if (!ST.draft[s.stopId]) ST.draft[s.stopId] = { status: null, photos: [] }; });
+  renderStops();
+}
+
+// ── RENDER: STOPS ───────────────────────────────────────────────────────────
+function renderStops() {
+  const app = document.getElementById('app');
+  let html = `
+    <div class="selected-banner">
+      <div class="who">${esc(ST.driver)} <span>· ${esc(ST.asset)}</span></div>
+      <span class="change-link" onclick="resetAll()">Change</span>
+    </div>
+    <div class="step-label">Step 3 — Update each stop</div>`;
+
+  if (!ST.stops.length) {
+    html += `<div class="note">No stops found for ${esc(ST.driver)} on ${esc(ST.asset)} today.<br>
+      Double-check the asset, or use Change to pick again.</div>`;
+    app.innerHTML = html;
+    return;
+  }
+
+  html += ST.stops.map(s => stopCardHTML(s)).join('');
+  app.innerHTML = html;
+}
+
+function stopCardHTML(s) {
+  const d = ST.draft[s.stopId] || { status: null, photos: [] };
+  const submitted = !!d.submittedAt;
+  const statusBtns = STATUSES.map(st =>
+    `<button class="status-btn ${st.skip?'skip':''} ${d.status===st.key?'sel':''}"
+      onclick="setStatus('${s.stopId}','${st.key}')" ${submitted?'disabled':''}>${esc(st.short||st.label)}</button>`
+  ).join('');
+
+  const photos = d.photos.map((p, i) =>
+    `<div class="photo-thumb"><img src="${p}">${submitted?'':`<button class="rm" onclick="rmPhoto('${s.stopId}',${i})">×</button>`}</div>`
+  ).join('');
+  const addBtn = submitted ? '' : `
+    <label class="photo-add">
+      <span class="plus">+</span><span>Photo</span>
+      <input type="file" accept="image/*" capture="environment" multiple onchange="addPhotos('${s.stopId}', this)">
+    </label>`;
+
+  return `
+    <div class="stop ${submitted?'submitted':''}" id="stop-${esc(s.stopId)}">
+      <div class="stop-head">
+        <div class="stop-seq">${s.sequence||'•'}</div>
+        <div class="stop-info">
+          <div class="stop-cust">${esc(s.customerName||'—')}</div>
+          <div class="stop-addr">${esc(s.address||'')}</div>
+          <div class="stop-order">${esc(s.orderNumber||'')}</div>
+          <div class="stop-done-flag">✓ Submitted ${d.submittedAt?esc(d.submittedAtLabel):''}</div>
+        </div>
+      </div>
+      <div class="stop-body">
+        <div class="status-label">Status</div>
+        <div class="status-row">${statusBtns}</div>
+        <div class="photo-label">Photos${d.photos.length?` (${d.photos.length})`:''}</div>
+        <div class="photo-grid">${photos}${addBtn}</div>
+        <button class="stop-submit ${submitted?'done':''}" id="sub-${esc(s.stopId)}"
+          onclick="submitStop('${s.stopId}')" ${submitted?'disabled':''}>
+          ${submitted ? '✓ Submitted' : 'Submit This Stop'}
+        </button>
+      </div>
+    </div>`;
+}
+
+// ── INTERACTIONS ────────────────────────────────────────────────────────────
+function setStatus(stopId, key) {
+  if (ST.draft[stopId].submittedAt) return;
+  ST.draft[stopId].status = key;
+  refreshStop(stopId);
+}
+
+async function addPhotos(stopId, input) {
+  if (ST.draft[stopId].submittedAt) return;
+  const files = Array.from(input.files || []);
+  input.value = '';
+  for (const f of files) {
+    try {
+      const dataUrl = await compressImage(f);
+      ST.draft[stopId].photos.push(dataUrl);
+    } catch (e) { toast('Photo failed to load', 'err'); }
+  }
+  refreshStop(stopId);
+}
+
+function rmPhoto(stopId, i) {
+  if (ST.draft[stopId].submittedAt) return;
+  ST.draft[stopId].photos.splice(i, 1);
+  refreshStop(stopId);
+}
+
+function refreshStop(stopId) {
+  const s = ST.stops.find(x => x.stopId === stopId);
+  const el = document.getElementById('stop-' + stopId);
+  if (s && el) el.outerHTML = stopCardHTML(s);
+}
+
+// ── SUBMIT ──────────────────────────────────────────────────────────────────
+async function submitStop(stopId) {
+  const d = ST.draft[stopId];
+  if (!d || d.submittedAt) return;
+  if (!d.status) { toast('Pick a status first', 'err'); return; }
+
+  const s = ST.stops.find(x => x.stopId === stopId);
+  if (!s) { toast('Stop not found', 'err'); return; }
+
+  const btn = document.getElementById('sub-' + stopId);
+  if (btn) { btn.disabled = true; btn.textContent = 'Submitting…'; }
+
+  // Device clock captured at the moment of submit — locked into the record
+  const now = new Date();
+  const submission = {
+    driver:       ST.driver,
+    asset:        ST.asset,
+    status:       d.status,
+    photos:       d.photos,                       // base64 data URLs
+    photoCount:   d.photos.length,
+    submittedAt:  now.toISOString(),              // immutable timestamp
+    submittedAtLocal: now.toLocaleString(),       // human readable, device tz
+    orderNumber:  s.orderNumber || '',
+    customerName: s.customerName || '',
+    address:      s.address || '',
+    source:       'driver-fallback',
+    emailed:      false,                          // poller flips this after emailing
+  };
+
+  try {
+    // Write the submission node (poller watches these and emails)
+    await dbPush(`routes/${s.routeId}/stops/${s.stopId}/driverSubmissions`, submission);
+    // Also reflect status onto the stop so dispatcher shows it live
+    await dbPatch(`routes/${s.routeId}/stops/${s.stopId}`, {
+      deliveryStatus: d.status,
+      driverUpdatedAt: now.toISOString(),
+    });
+
+    d.submittedAt = submission.submittedAt;
+    d.submittedAtLabel = now.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+    refreshStop(stopId);
+    toast('Stop submitted ✓', 'ok');
+  } catch (e) {
+    if (btn) { btn.disabled = false; btn.textContent = 'Submit This Stop'; }
+    toast('Submit failed — check signal & retry', 'err');
+  }
+}
+
+// ── RESET ───────────────────────────────────────────────────────────────────
+function resetAll() {
+  ST.driver = null; ST.asset = null; ST.manualEntry = false; ST.stops = [];
+  renderPickDriver();
+}
+
+// ── BOOT ────────────────────────────────────────────────────────────────────
+load();
+</script>
+</body>
+</html>
