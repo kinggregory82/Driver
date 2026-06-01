@@ -214,6 +214,7 @@
 <script>
 // ── CONFIG ────────────────────────────────────────────────────────────────
 const DB = 'https://bccsms-27c55-default-rtdb.firebaseio.com';
+const DQ_ENDPOINT = 'https://dqtapim.azure-api.net/BensContractorCenter?subscription-key=b14ba32fef4b4c959d044af313e2b220';
 const PHOTO_MAX_PX = 1000;
 const PHOTO_QUALITY = 0.70;
 const STATUSES = [
@@ -309,15 +310,25 @@ async function load() {
 }
 
 // Build driver -> [{asset, routeId}] map from selected date's routes
+// All unique driver names across all routes in Firebase
+function allDrivers() {
+  const names = new Set();
+  Object.entries(ST.routes).forEach(([rid, r]) => {
+    if (!r || rid === 'UNASSIGNED') return;
+    const drv = (r.driverName || '').trim();
+    if (drv) names.add(drv);
+  });
+  return [...names].sort();
+}
+
 function driverIndex() {
   const dk = activeKey();
-  // Also accept the adjacent UTC dates in case dispatcher saved with toISOString() (UTC offset)
   const dkDate = new Date(dk + 'T12:00:00');
   const prev = localDateKey(new Date(dkDate - 864e5));
   const next = localDateKey(new Date(+dkDate + 864e5));
   const validDates = new Set([dk, prev, next]);
 
-  const map = {};   // driverName -> Set of "asset||routeId"
+  const map = {};
   Object.entries(ST.routes).forEach(([rid, r]) => {
     if (!r || !validDates.has(r.date)) return;
     if (rid === 'UNASSIGNED') return;
@@ -331,37 +342,20 @@ function driverIndex() {
   return map;
 }
 
-// ── RENDER: PICK DRIVER ─────────────────────────────────────────────────────
+// ── RENDER: PICK DRIVER — shows all known drivers, no date filter ────────────
 function renderPickDriver() {
   const app = document.getElementById('app');
-  const idx = driverIndex();
-  const drivers = Object.keys(idx).sort();
-  const today = todayKey();
-  const active = activeKey();
-  const isPast = active !== today;
+  const drivers = allDrivers();
 
-  let html = `
-    <div class="date-bar">
-      <label>Date</label>
-      <input type="date" id="date-pick" value="${active}" max="${today}"
-        onchange="changeDate(this.value)">
-      ${isPast ? `<span class="date-past-badge">Past Route</span>` :
-        `<button class="date-today-btn" onclick="changeDate('')">Today</button>`}
-    </div>
-    <div class="step-label">Step 1 — Who are you?</div>`;
+  let html = `<div class="step-label">Who are you?</div>`;
   if (drivers.length) {
-    html += `<div class="pick-grid">` + drivers.map(d => {
-      const assetCount = Object.keys(idx[d]).length;
-      const stopCount = Object.values(idx[d]).flat().reduce((n, rid) => {
-        const r = ST.routes[rid]; return n + (r && r.stops ? Object.keys(r.stops).length : 0);
-      }, 0);
-      return `<button class="pick" onclick="pickDriver('${esc(d)}')">
+    html += `<div class="pick-grid">` + drivers.map(d =>
+      `<button class="pick" onclick="pickDriver('${esc(d)}')">
         <span class="nm">${esc(d)}</span>
-        <span class="meta">${stopCount} stop${stopCount===1?'':'s'} today</span>
-      </button>`;
-    }).join('') + `</div>`;
+      </button>`
+    ).join('') + `</div>`;
   } else {
-    html += `<div class="note">No routes found for ${isPast ? active : 'today'} yet.<br>Use manual entry below, or pick a different date.</div>`;
+    html += `<div class="note">No drivers found. Use manual entry below.</div>`;
   }
 
   html += `<div class="manual-toggle">
@@ -393,6 +387,7 @@ function pickManual() {
 
 function pickDriver(d) {
   ST.driver = d;
+  ST.selectedDate = null; // default to today when picking a driver
   const idx = driverIndex();
   const assets = Object.keys(idx[d] || {});
   if (assets.length === 1) { ST.asset = assets[0]; resolveStops(); }
@@ -402,12 +397,20 @@ function pickDriver(d) {
 // ── RENDER: PICK ASSET ──────────────────────────────────────────────────────
 function renderPickAsset(assets) {
   const app = document.getElementById('app');
+  const today = todayKey();
+  const active = activeKey();
+  const isPast = active !== today;
   app.innerHTML = `
     <div class="selected-banner">
       <div class="who">${esc(ST.driver)}</div>
       <span class="change-link" onclick="resetAll()">Change</span>
     </div>
-    <div class="step-label">Step 2 — Which asset?</div>
+    <div class="date-bar" style="margin-top:14px">
+      <label>Date</label>
+      <input type="date" id="date-pick" value="${active}" max="${today}" onchange="changeDate(this.value)">
+      ${isPast ? `<span class="date-past-badge">Past Route</span>` : `<button class="date-today-btn" onclick="changeDate('')">Today</button>`}
+    </div>
+    <div class="step-label">Which asset?</div>
     <div class="pick-grid">` +
     assets.sort().map(a => `<button class="pick" onclick="pickAsset('${esc(a)}')">
       <span class="nm">${esc(a)}</span>
@@ -445,16 +448,24 @@ function resolveStops() {
 // ── RENDER: STOPS ───────────────────────────────────────────────────────────
 function renderStops() {
   const app = document.getElementById('app');
+  const today = todayKey();
+  const active = activeKey();
+  const isPast = active !== today;
   let html = `
     <div class="selected-banner">
       <div class="who">${esc(ST.driver)} <span>· ${esc(ST.asset)}</span></div>
       <span class="change-link" onclick="resetAll()">Change</span>
     </div>
-    <div class="step-label">Step 3 — Update each stop</div>`;
+    <div class="date-bar" style="margin-top:14px">
+      <label>Date</label>
+      <input type="date" id="date-pick" value="${active}" max="${today}" onchange="changeDate(this.value)">
+      ${isPast ? `<span class="date-past-badge">Past Route</span>` : `<button class="date-today-btn" onclick="changeDate('')">Today</button>`}
+    </div>
+    <div class="step-label">Update each stop</div>`;
 
   if (!ST.stops.length) {
-    html += `<div class="note">No stops found for ${esc(ST.driver)} on ${esc(ST.asset)} today.<br>
-      Double-check the asset, or use Change to pick again.</div>`;
+    html += `<div class="note">No stops found for ${esc(ST.driver)} on this date.<br>
+      Try a different date above, or use Change to pick again.</div>`;
     app.innerHTML = html;
     return;
   }
@@ -573,13 +584,21 @@ async function submitStop(stopId) {
   };
 
   try {
-    // Write the submission node (poller watches these and emails)
-    await dbPush(`routes/${s.routeId}/stops/${s.stopId}/driverSubmissions`, submission);
-    // Also reflect status onto the stop so dispatcher shows it live
-    await dbPatch(`routes/${s.routeId}/stops/${s.stopId}`, {
-      deliveryStatus: d.status,
-      driverUpdatedAt: now.toISOString(),
-    });
+    // For past DQ-fetched routes (routeId starts with dq_past_), write to a
+    // dedicated past_submissions node instead of a live route
+    const isPastDq = s.routeId.startsWith('dq_past_');
+    const realRouteId = isPastDq ? s.routeId.replace('dq_past_', '') : s.routeId;
+    if (isPastDq) {
+      await dbPush(`past_submissions`, { ...submission, routeId: realRouteId });
+    } else {
+      // Write the submission node (poller watches these and emails)
+      await dbPush(`routes/${s.routeId}/stops/${s.stopId}/driverSubmissions`, submission);
+      // Also reflect status onto the stop so dispatcher shows it live
+      await dbPatch(`routes/${s.routeId}/stops/${s.stopId}`, {
+        deliveryStatus: d.status,
+        driverUpdatedAt: now.toISOString(),
+      });
+    }
 
     d.submittedAt = submission.submittedAt;
     d.submittedAtLabel = now.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
@@ -594,10 +613,121 @@ async function submitStop(stopId) {
 // ── DATE CHANGE ──────────────────────────────────────────────────────────────
 async function changeDate(val) {
   ST.selectedDate = val || null;
-  ST.driver = null; ST.asset = null; ST.manualEntry = false; ST.stops = []; ST.draft = {};
-  // Reload routes for the new date (they live under routes/ keyed by routeId with .date field)
-  // Routes are already fully loaded; just re-render with the new filter
-  renderPickDriver();
+  ST.stops = [];
+  // Remove any previously fetched past DQ routes so they get re-fetched fresh
+  for (const key of Object.keys(ST.routes)) {
+    if (key.startsWith('dq_past_')) delete ST.routes[key];
+  }
+  if (ST.selectedDate && ST.selectedDate !== todayKey()) {
+    await ensurePastRoutes(ST.selectedDate);
+  }
+  // If driver+asset already chosen, go straight to stops for new date
+  if (ST.driver && ST.asset) {
+    // Re-init draft for new stops
+    resolveStops();
+  } else if (ST.driver) {
+    // Re-render asset picker with updated date
+    const idx = driverIndex();
+    const assets = Object.keys(idx[ST.driver] || {});
+    if (assets.length === 1) { ST.asset = assets[0]; resolveStops(); }
+    else renderPickAsset(assets);
+  } else {
+    renderPickDriver();
+  }
+}
+
+// Fetch past routes from DQ if Firebase has none for that date
+async function ensurePastRoutes(dateKey) {
+  const hasRoutes = Object.values(ST.routes).some(r => r && r.date === dateKey);
+  if (hasRoutes) return; // Firebase already has them
+
+  const app = document.getElementById('app');
+  app.innerHTML = '<div class="spinner"></div><div class="note">Loading past routes from DQ…</div>';
+
+  try {
+    const query = `query($where: OrderFilterInput, $first: Int) {
+      order(where: $where, first: $first) {
+        nodes {
+          orderNumber deliveryId stopNumber
+          mainCustomerName shipToName
+          shipToAddress { address1 city state }
+          orderTripStatus { name }
+          assignedSales
+          delivery {
+            id timeOut timeIn tripDate
+            asset { assetNumber }
+            userProfile { displayName }
+            estimatedTime totalStops
+          }
+          arrivalTime deliveryTime weight
+        }
+      }
+    }`;
+    const resp = await fetch(DQ_ENDPOINT, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        query,
+        variables: { where: { reqDate: { eq: dateKey + 'T00:00:00.000Z' } }, first: 100 }
+      })
+    });
+    const data = await resp.json();
+    const nodes = data?.data?.order?.nodes || [];
+    if (!nodes.length) return;
+
+    // Build synthetic route objects matching Firebase structure
+    const routeMap = {};
+    for (const n of nodes) {
+      const rid = String(n.deliveryId || 'UNASSIGNED');
+      if (rid === 'UNASSIGNED') continue;
+      const delivery = n.delivery || {};
+      const asset = delivery.asset || {};
+      const assetRaw = (asset.assetNumber || '').trim();
+      const parts = assetRaw.split(' ');
+      const assetNum = parts[0] || '';
+      const assetDesc = parts.slice(1).join(' ');
+      const driver = (delivery.userProfile?.displayName || '').trim();
+      const addr = n.shipToAddress || {};
+      const address = [addr.address1, addr.city, addr.state].filter(Boolean).join(', ');
+      const stopId = 'order_' + n.orderNumber;
+      const dqStatus = (n.orderTripStatus?.name || '').toLowerCase();
+      const status = ['delivered', 'delivered no/signature', 'delivered w/signature',
+                      'delivery complete', 'delivery w/signature'].some(s => dqStatus.includes(s))
+                    ? 'complete' : dqStatus === 'cancelled' ? 'skipped' : 'pending';
+
+      if (!routeMap[rid]) {
+        routeMap[rid] = {
+          date: dateKey,
+          driverName: driver,
+          asset: assetNum,
+          assetDescription: assetDesc,
+          stops: {}
+        };
+      }
+      routeMap[rid].stops[stopId] = {
+        sequence:       n.stopNumber || 0,
+        orderNumber:    n.orderNumber,
+        customerName:   n.shipToName || n.mainCustomerName || '',
+        address,
+        assignedSales:  n.assignedSales || '',
+        status,
+        deliveryStatus: n.orderTripStatus?.name || '',
+        arrivalTime:    n.arrivalTime || null,
+        deliveryTime:   n.deliveryTime || null,
+        completedAt:    n.deliveryTime || null,
+        weight:         n.weight || null,
+        token:          null,  // no token for past DQ-fetched stops
+      };
+    }
+
+    // Merge into ST.routes under a synthetic key so driverIndex() finds them
+    for (const [rid, route] of Object.entries(routeMap)) {
+      ST.routes['dq_past_' + rid] = route;
+    }
+  } catch(e) {
+    console.error('DQ past fetch failed', e);
+    toast('Could not load past routes — check connection', 'err');
+  }
 }
 
 // ── RESET ───────────────────────────────────────────────────────────────────
