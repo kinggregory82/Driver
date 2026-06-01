@@ -260,7 +260,14 @@ async function dbPush(path, data) {
 // ── UTIL ────────────────────────────────────────────────────────────────────
 function esc(s) { return String(s==null?'':s).replace(/[&<>"']/g, c =>
   ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
-function todayKey() { return new Date().toISOString().slice(0,10); }
+function localDateKey(d) {
+  // Use local year/month/day — avoids UTC offset flipping the date
+  const dt = d || new Date();
+  return dt.getFullYear() + '-' +
+    String(dt.getMonth()+1).padStart(2,'0') + '-' +
+    String(dt.getDate()).padStart(2,'0');
+}
+function todayKey() { return localDateKey(); }
 function activeKey() { return ST.selectedDate || todayKey(); }
 function isToday() { return activeKey() === todayKey(); }
 function toast(msg, kind) {
@@ -304,9 +311,15 @@ async function load() {
 // Build driver -> [{asset, routeId}] map from selected date's routes
 function driverIndex() {
   const dk = activeKey();
+  // Also accept the adjacent UTC dates in case dispatcher saved with toISOString() (UTC offset)
+  const dkDate = new Date(dk + 'T12:00:00');
+  const prev = localDateKey(new Date(dkDate - 864e5));
+  const next = localDateKey(new Date(+dkDate + 864e5));
+  const validDates = new Set([dk, prev, next]);
+
   const map = {};   // driverName -> Set of "asset||routeId"
   Object.entries(ST.routes).forEach(([rid, r]) => {
-    if (!r || r.date !== dk) return;
+    if (!r || !validDates.has(r.date)) return;
     if (rid === 'UNASSIGNED') return;
     const drv = (r.driverName || '').trim();
     if (!drv) return;
@@ -406,9 +419,13 @@ function pickAsset(a) { ST.asset = a; resolveStops(); }
 // ── RESOLVE STOPS for chosen driver + asset ─────────────────────────────────
 function resolveStops() {
   const dk = activeKey();
+  const dkDate = new Date(dk + 'T12:00:00');
+  const validDates = new Set([dk,
+    localDateKey(new Date(dkDate - 864e5)),
+    localDateKey(new Date(+dkDate + 864e5))]);
   const stops = [];
   Object.entries(ST.routes).forEach(([rid, r]) => {
-    if (!r || r.date !== dk || rid === 'UNASSIGNED') return;
+    if (!r || !validDates.has(r.date) || rid === 'UNASSIGNED') return;
     const asset = [r.asset, r.assetDescription].filter(Boolean).join(' ').trim() || '—';
     const drvMatch = (r.driverName || '').trim() === ST.driver;
     const assetMatch = asset === ST.asset;
