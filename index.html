@@ -157,6 +157,34 @@
   .toast.err { background: var(--red); color: #fff; }
   .toast.ok  { background: var(--green); color: #fff; }
 
+  /* DATE PICKER */
+  .date-bar { display: flex; align-items: center; gap: 10px; margin-bottom: 4px;
+    background: var(--panel); border: 1px solid var(--line); border-radius: 4px; padding: 10px 14px; }
+  .date-bar label { font-family: 'Oswald', sans-serif; font-size: 11px; letter-spacing: 0.18em;
+    text-transform: uppercase; color: var(--mut); white-space: nowrap; }
+  .date-bar input[type=date] { flex: 1; background: transparent; border: none;
+    color: var(--txt); font-family: 'Barlow', sans-serif; font-size: 15px; font-weight: 600;
+    cursor: pointer; min-width: 0; }
+  .date-bar input[type=date]:focus { outline: none; }
+  .date-bar input[type=date]::-webkit-calendar-picker-indicator { filter: invert(0.6); cursor: pointer; }
+  .date-today-btn { font-family: 'Oswald', sans-serif; font-size: 10px; letter-spacing: 0.12em;
+    text-transform: uppercase; background: none; border: 1px solid var(--line); color: var(--mut);
+    padding: 5px 10px; border-radius: 3px; cursor: pointer; white-space: nowrap; }
+  .date-today-btn:active { border-color: var(--red); color: var(--red-br); }
+  .date-past-badge { font-family: 'Oswald', sans-serif; font-size: 9px; letter-spacing: 0.14em;
+    text-transform: uppercase; color: var(--amber); border: 1px solid rgba(224,160,32,0.4);
+    padding: 3px 7px; border-radius: 2px; white-space: nowrap; }
+
+  /* PHOTO SOURCE BUTTONS */
+  .photo-source-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 8px; }
+  .photo-src-btn { padding: 11px 8px; border: 1px dashed var(--line); background: var(--panel2);
+    color: var(--mut); font-family: 'Oswald', sans-serif; font-size: 11px; letter-spacing: 0.1em;
+    text-transform: uppercase; border-radius: 4px; cursor: pointer; display: flex;
+    align-items: center; justify-content: center; gap: 6px; }
+  .photo-src-btn:active { border-color: var(--red); color: var(--red-br); }
+  .photo-src-btn input { display: none; }
+  .photo-src-icon { font-size: 18px; }
+
   .change-link { display: inline-block; margin-top: 8px; color: var(--mut);
     font-family: 'Oswald', sans-serif; font-size: 10px; letter-spacing: 0.14em;
     text-transform: uppercase; text-decoration: underline; cursor: pointer; }
@@ -203,6 +231,7 @@ const ST = {
   manual: false,
   stops: [],          // resolved stops for chosen driver+asset
   draft: {},          // stopId -> { status, photos: [dataURL,...] }
+  selectedDate: null, // null = today; YYYY-MM-DD string for past dates
 };
 
 // ── DB HELPERS (plain REST, same pattern as dispatcher) ─────────────────────
@@ -232,6 +261,8 @@ async function dbPush(path, data) {
 function esc(s) { return String(s==null?'':s).replace(/[&<>"']/g, c =>
   ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 function todayKey() { return new Date().toISOString().slice(0,10); }
+function activeKey() { return ST.selectedDate || todayKey(); }
+function isToday() { return activeKey() === todayKey(); }
 function toast(msg, kind) {
   const t = document.getElementById('toast');
   t.className = 'toast show' + (kind ? ' ' + kind : '');
@@ -270,9 +301,9 @@ async function load() {
   renderPickDriver();
 }
 
-// Build driver -> [{asset, routeId}] map from today's routes
+// Build driver -> [{asset, routeId}] map from selected date's routes
 function driverIndex() {
-  const dk = todayKey();
+  const dk = activeKey();
   const map = {};   // driverName -> Set of "asset||routeId"
   Object.entries(ST.routes).forEach(([rid, r]) => {
     if (!r || r.date !== dk) return;
@@ -292,8 +323,19 @@ function renderPickDriver() {
   const app = document.getElementById('app');
   const idx = driverIndex();
   const drivers = Object.keys(idx).sort();
+  const today = todayKey();
+  const active = activeKey();
+  const isPast = active !== today;
 
-  let html = `<div class="step-label">Step 1 — Who are you?</div>`;
+  let html = `
+    <div class="date-bar">
+      <label>Date</label>
+      <input type="date" id="date-pick" value="${active}" max="${today}"
+        onchange="changeDate(this.value)">
+      ${isPast ? `<span class="date-past-badge">Past Route</span>` :
+        `<button class="date-today-btn" onclick="changeDate('')">Today</button>`}
+    </div>
+    <div class="step-label">Step 1 — Who are you?</div>`;
   if (drivers.length) {
     html += `<div class="pick-grid">` + drivers.map(d => {
       const assetCount = Object.keys(idx[d]).length;
@@ -306,7 +348,7 @@ function renderPickDriver() {
       </button>`;
     }).join('') + `</div>`;
   } else {
-    html += `<div class="note">No routes seeded for today yet.<br>Use manual entry below.</div>`;
+    html += `<div class="note">No routes found for ${isPast ? active : 'today'} yet.<br>Use manual entry below, or pick a different date.</div>`;
   }
 
   html += `<div class="manual-toggle">
@@ -363,7 +405,7 @@ function pickAsset(a) { ST.asset = a; resolveStops(); }
 
 // ── RESOLVE STOPS for chosen driver + asset ─────────────────────────────────
 function resolveStops() {
-  const dk = todayKey();
+  const dk = activeKey();
   const stops = [];
   Object.entries(ST.routes).forEach(([rid, r]) => {
     if (!r || r.date !== dk || rid === 'UNASSIGNED') return;
@@ -416,10 +458,16 @@ function stopCardHTML(s) {
     `<div class="photo-thumb"><img src="${p}">${submitted?'':`<button class="rm" onclick="rmPhoto('${s.stopId}',${i})">×</button>`}</div>`
   ).join('');
   const addBtn = submitted ? '' : `
-    <label class="photo-add">
-      <span class="plus">+</span><span>Photo</span>
-      <input type="file" accept="image/*" capture="environment" multiple onchange="addPhotos('${s.stopId}', this)">
-    </label>`;
+    <div class="photo-source-row">
+      <label class="photo-src-btn">
+        <span class="photo-src-icon">📷</span><span>Camera</span>
+        <input type="file" accept="image/*" capture="environment" multiple onchange="addPhotos('${s.stopId}', this)">
+      </label>
+      <label class="photo-src-btn">
+        <span class="photo-src-icon">🖼️</span><span>Gallery</span>
+        <input type="file" accept="image/*" multiple onchange="addPhotos('${s.stopId}', this)">
+      </label>
+    </div>`;
 
   return `
     <div class="stop ${submitted?'submitted':''}" id="stop-${esc(s.stopId)}">
@@ -436,7 +484,8 @@ function stopCardHTML(s) {
         <div class="status-label">Status</div>
         <div class="status-row">${statusBtns}</div>
         <div class="photo-label">Photos${d.photos.length?` (${d.photos.length})`:''}</div>
-        <div class="photo-grid">${photos}${addBtn}</div>
+        ${addBtn}
+        <div class="photo-grid">${photos}</div>
         <button class="stop-submit ${submitted?'done':''}" id="sub-${esc(s.stopId)}"
           onclick="submitStop('${s.stopId}')" ${submitted?'disabled':''}>
           ${submitted ? '✓ Submitted' : 'Submit This Stop'}
@@ -523,6 +572,15 @@ async function submitStop(stopId) {
     if (btn) { btn.disabled = false; btn.textContent = 'Submit This Stop'; }
     toast('Submit failed — check signal & retry', 'err');
   }
+}
+
+// ── DATE CHANGE ──────────────────────────────────────────────────────────────
+async function changeDate(val) {
+  ST.selectedDate = val || null;
+  ST.driver = null; ST.asset = null; ST.manualEntry = false; ST.stops = []; ST.draft = {};
+  // Reload routes for the new date (they live under routes/ keyed by routeId with .date field)
+  // Routes are already fully loaded; just re-render with the new filter
+  renderPickDriver();
 }
 
 // ── RESET ───────────────────────────────────────────────────────────────────
