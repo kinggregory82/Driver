@@ -215,6 +215,58 @@
 // ── CONFIG ────────────────────────────────────────────────────────────────
 const DB = 'https://bccsms-27c55-default-rtdb.firebaseio.com';
 const DQ_ENDPOINT = 'https://dqtapim.azure-api.net/BensContractorCenter?subscription-key=b14ba32fef4b4c959d044af313e2b220';
+
+// ── DQ WRITE-BACK ─────────────────────────────────────────────────────────────
+const DQ_HEADERS = { 'Content-Type': 'application/json', 'Accept': 'application/json' };
+
+// Map driver status keys to DQ orderTripStatus names
+const DQ_STATUS_MAP = {
+  'Arrived':          'Arrived',
+  'Delivered':        'Delivered w/Signature',
+  'Delivered No Sig': 'Delivered No/Signature',
+  'Skipped':          'Not Delivered',
+};
+
+async function dqMutation(query, variables) {
+  const r = await fetch(DQ_ENDPOINT, {
+    method: 'POST',
+    headers: DQ_HEADERS,
+    body: JSON.stringify({ query, variables: variables || {} }),
+  });
+  if (!r.ok) throw new Error(`DQ HTTP ${r.status}`);
+  const data = await r.json();
+  if (data.errors && data.errors.length) {
+    console.warn('DQ mutation errors:', data.errors);
+  }
+  return data;
+}
+
+async function dqWriteBackStatus(dqOrderId, status, now) {
+  if (!dqOrderId) return { skipped: 'no dqOrderId' };
+  const nowIso = now.toISOString();
+  const results = {};
+
+  // Write arrivalTime and deliveryTime to the order
+  const isDelivery = status === 'Delivered' || status === 'Delivered No Sig';
+  const isArrived  = status === 'Arrived';
+  try {
+    const input = { id: Number(dqOrderId) };
+    if (isArrived || isDelivery) input.arrivalTime  = nowIso;
+    if (isDelivery)              input.deliveryTime = nowIso;
+    await dqMutation(
+      `mutation UpdateOrder($input: UpdateOrderInput!) {
+         updateOrder(input: $input) { __typename }
+       }`,
+      { input }
+    );
+    results.orderUpdated = true;
+  } catch(e) {
+    results.orderError = e.message;
+    console.warn('DQ updateOrder failed:', e);
+  }
+
+  return results;
+}
 const PHOTO_MAX_PX = 1000;
 const PHOTO_QUALITY = 0.70;
 const STATUSES = [
@@ -583,19 +635,34 @@ async function submitStop(stopId) {
     emailed:      false,                          // poller flips this after emailing
   };
 
+  // ── 1. Write back to DQ (status + timestamps) ───────────────────────────
+  const dqOrderId = s.dqOrderId || null;
+  let dqResult = {};
+  if (dqOrderId) {
+    if (btn) btn.textContent = 'Writing to DQ…';
+    try {
+      dqResult = await dqWriteBackStatus(dqOrderId, d.status, now);
+    } catch(e) {
+      console.warn('DQ write-back failed:', e);
+      dqResult = { error: e.message };
+    }
+  }
+
   try {
-    // For past DQ-fetched routes (routeId starts with dq_past_), write to a
-    // dedicated past_submissions node instead of a live route
+    // ── 2. Write to Firebase ─────────────────────────────────────────────
+    const fullSubmission = {
+      ...submission,
+      dqOrderId:   dqOrderId,
+      dqWriteBack: dqResult,
+    };
     const isPastDq = s.routeId.startsWith('dq_past_');
     const realRouteId = isPastDq ? s.routeId.replace('dq_past_', '') : s.routeId;
     if (isPastDq) {
-      await dbPush(`past_submissions`, { ...submission, routeId: realRouteId });
+      await dbPush(`past_submissions`, { ...fullSubmission, routeId: realRouteId });
     } else {
-      // Write the submission node (poller watches these and emails)
-      await dbPush(`routes/${s.routeId}/stops/${s.stopId}/driverSubmissions`, submission);
-      // Also reflect status onto the stop so dispatcher shows it live
+      await dbPush(`routes/${s.routeId}/stops/${s.stopId}/driverSubmissions`, fullSubmission);
       await dbPatch(`routes/${s.routeId}/stops/${s.stopId}`, {
-        deliveryStatus: d.status,
+        deliveryStatus:  d.status,
         driverUpdatedAt: now.toISOString(),
       });
     }
@@ -603,7 +670,8 @@ async function submitStop(stopId) {
     d.submittedAt = submission.submittedAt;
     d.submittedAtLabel = now.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
     refreshStop(stopId);
-    toast('Stop submitted ✓', 'ok');
+    const dqMsg = dqOrderId ? (dqResult.orderUpdated ? ' · DQ ✓' : ' · DQ partial') : '';
+    toast(`Stop submitted ✓${dqMsg}`, 'ok');
   } catch (e) {
     if (btn) { btn.disabled = false; btn.textContent = 'Submit This Stop'; }
     toast('Submit failed — check signal & retry', 'err');
@@ -648,7 +716,7 @@ async function ensurePastRoutes(dateKey) {
     const query = `query($where: OrderFilterInput, $first: Int) {
       order(where: $where, first: $first) {
         nodes {
-          orderNumber deliveryId stopNumber
+          id orderNumber deliveryId stopNumber
           mainCustomerName shipToName
           shipToAddress { address1 city state }
           orderTripStatus { name }
@@ -706,6 +774,7 @@ async function ensurePastRoutes(dateKey) {
       }
       routeMap[rid].stops[stopId] = {
         sequence:       n.stopNumber || 0,
+        dqOrderId:      n.id || null,
         orderNumber:    n.orderNumber,
         customerName:   n.shipToName || n.mainCustomerName || '',
         address,
