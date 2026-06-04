@@ -522,7 +522,26 @@ function renderStops() {
     return;
   }
 
-  html += ST.stops.map(s => stopCardHTML(s)).join('');
+  // Filter out stops already completed (status complete or already submitted this session)
+  const visibleStops = ST.stops.filter(s => {
+    if (s.status === 'complete') return false;
+    const ds = (s.deliveryStatus || '').toLowerCase();
+    if (['delivered w/signature','delivered no/signature','delivered','delivery complete',
+         'delivered partial w/sig','delivered partial no/sig'].some(x => ds.includes(x))) return false;
+    const d = ST.draft[s.stopId];
+    if (d && d.submittedAt) return false;
+    return true;
+  });
+
+  if (!visibleStops.length) {
+    html += `<div class="note" style="text-align:center;padding:32px 16px">
+      <div style="font-size:32px;margin-bottom:12px">✓</div>
+      All stops complete for today!</div>`;
+    app.innerHTML = html;
+    return;
+  }
+
+  html += visibleStops.map(s => stopCardHTML(s)).join('');
   app.innerHTML = html;
 }
 
@@ -601,9 +620,8 @@ function rmPhoto(stopId, i) {
 }
 
 function refreshStop(stopId) {
-  const s = ST.stops.find(x => x.stopId === stopId);
-  const el = document.getElementById('stop-' + stopId);
-  if (s && el) el.outerHTML = stopCardHTML(s);
+  // Re-render the full list so submitted/complete stops are hidden
+  renderStops();
 }
 
 // ── SUBMIT ──────────────────────────────────────────────────────────────────
