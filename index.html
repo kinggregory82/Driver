@@ -2,829 +2,654 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>BCC Driver — Delivery Submit</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>BCC Fleet</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Oswald:wght@500;600;700&family=Barlow:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;900&family=Barlow:wght@400;500;600&display=swap" rel="stylesheet">
+<link href="https://api.mapbox.com/mapbox-gl-js/v3.3.0/mapbox-gl.css" rel="stylesheet">
+<script src="https://api.mapbox.com/mapbox-gl-js/v3.3.0/mapbox-gl.js"></script>
 <style>
-  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
   :root {
-    --red: #C41230; --red-dk: #9a0e25; --red-br: #ff2d4a;
-    --ink: #0d0d0d; --panel: #1a1a1a; --panel2: #222;
-    --line: #2c2c2c; --txt: #f0f0f0; --mut: #999;
-    --green: #2fae5a; --amber: #e0a020;
+    --red:    #C41230;
+    --dark:   #0d0d0d;
+    --panel:  #141414;
+    --panel2: #1a1a1a;
+    --border: #242424;
+    --muted:  #555;
+    --dim:    #888;
+    --white:  #f0f0f0;
+    --green:  #2ecc71;
+    --yellow: #f39c12;
   }
-  html, body { background: var(--ink); color: var(--txt);
-    font-family: 'Barlow', sans-serif; min-height: 100vh;
-    background-image:
-      radial-gradient(circle at 8% 0%, rgba(196,18,48,0.07) 0%, transparent 38%),
-      radial-gradient(circle at 92% 100%, rgba(196,18,48,0.05) 0%, transparent 42%);
-    background-attachment: fixed;
-  }
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  html { background: var(--dark); }
+  body { font-family: 'Barlow', sans-serif; color: var(--white); background: var(--dark); }
 
-  /* HEADER */
-  header { background: linear-gradient(180deg, #1a1a1a, #0f0f0f);
-    border-bottom: 4px solid var(--red); padding: 14px 18px;
+  /* ── Header ── */
+  #hdr {
+    position: sticky; top: 0; z-index: 100;
     display: flex; align-items: center; justify-content: space-between;
-    position: sticky; top: 0; z-index: 50; box-shadow: 0 4px 18px rgba(0,0,0,0.55); }
-  .h-title { font-family: 'Oswald', sans-serif; font-size: 17px; font-weight: 700;
-    letter-spacing: 0.16em; text-transform: uppercase; color: var(--red-br);
-    text-shadow: 0 0 16px rgba(196,18,48,0.4); }
-  .h-sub { font-size: 10px; letter-spacing: 0.18em; text-transform: uppercase;
-    color: var(--mut); margin-top: 2px; }
-  .h-fallback { font-family: 'Oswald', sans-serif; font-size: 9px; letter-spacing: 0.14em;
-    text-transform: uppercase; color: var(--amber); border: 1px solid rgba(224,160,32,0.4);
-    padding: 4px 8px; border-radius: 2px; }
-
-  main { max-width: 640px; margin: 0 auto; padding: 18px 16px 120px; }
-
-  /* STEP LABEL */
-  .step-label { font-family: 'Oswald', sans-serif; font-size: 11px; letter-spacing: 0.22em;
-    text-transform: uppercase; color: var(--mut); margin: 22px 0 10px;
-    display: flex; align-items: center; gap: 9px; }
-  .step-label::before { content: ''; width: 18px; height: 2px; background: var(--red); }
-  .step-label:first-child { margin-top: 4px; }
-
-  /* SELECT GRID (drivers / assets) */
-  .pick-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-  .pick {
-    background: linear-gradient(180deg, var(--panel), #151515);
-    border: 1px solid var(--line); border-radius: 4px;
-    padding: 18px 14px; text-align: left; cursor: pointer;
-    font-family: 'Oswald', sans-serif; color: var(--txt);
-    transition: all 0.12s ease; min-height: 64px;
-    display: flex; flex-direction: column; justify-content: center; gap: 3px;
+    padding: 10px 14px; background: var(--panel);
+    border-bottom: 2px solid var(--red);
   }
-  .pick:active { transform: scale(0.97); }
-  .pick.sel { border-color: var(--red); background: linear-gradient(180deg, #2a1216, #1a0d10);
-    box-shadow: 0 0 0 1px var(--red), 0 4px 14px rgba(196,18,48,0.25); }
-  .pick .nm { font-size: 17px; font-weight: 600; letter-spacing: 0.02em; }
-  .pick .meta { font-size: 12px; color: var(--mut); letter-spacing: 0.04em; font-weight: 500; }
-  .pick.sel .meta { color: #e7a8b2; }
-
-  /* MANUAL FALLBACK */
-  .manual-toggle { margin-top: 12px; text-align: center; }
-  .manual-toggle button { background: none; border: none; color: var(--mut);
-    font-family: 'Oswald', sans-serif; font-size: 11px; letter-spacing: 0.14em;
-    text-transform: uppercase; text-decoration: underline; cursor: pointer; padding: 8px; }
-  .manual-fields { display: none; margin-top: 12px; gap: 10px; flex-direction: column; }
-  .manual-fields.show { display: flex; }
-  .field-input { width: 100%; background: var(--panel); border: 1px solid var(--line);
-    border-radius: 4px; padding: 15px 14px; color: var(--txt);
-    font-family: 'Barlow', sans-serif; font-size: 16px; font-weight: 500; }
-  .field-input:focus { outline: none; border-color: var(--red); }
-  .field-input::placeholder { color: #666; }
-
-  /* STOPS */
-  .stop {
-    background: linear-gradient(180deg, var(--panel), #161616);
-    border: 1px solid var(--line); border-radius: 5px; margin-bottom: 14px;
-    overflow: hidden; box-shadow: 0 3px 12px rgba(0,0,0,0.3);
+  #hdr h1 {
+    font-family: 'Barlow Condensed', sans-serif; font-size: 20px;
+    font-weight: 900; letter-spacing: .08em; text-transform: uppercase;
   }
-  .stop-head { padding: 14px 16px; display: flex; align-items: flex-start; gap: 12px;
-    border-left: 4px solid var(--red); }
-  .stop-seq { font-family: 'Oswald', sans-serif; font-size: 26px; font-weight: 700;
-    color: var(--red-br); line-height: 1; min-width: 30px; }
-  .stop-info { flex: 1; min-width: 0; }
-  .stop-cust { font-family: 'Oswald', sans-serif; font-size: 17px; font-weight: 600;
-    letter-spacing: 0.02em; }
-  .stop-addr { font-size: 13px; color: var(--mut); margin-top: 3px; line-height: 1.4; }
-  .stop-order { font-family: 'Oswald', sans-serif; font-size: 11px; letter-spacing: 0.08em;
-    color: #777; margin-top: 5px; }
-  .stop-done-flag { font-family: 'Oswald', sans-serif; font-size: 10px; letter-spacing: 0.12em;
-    text-transform: uppercase; color: var(--green); margin-top: 6px; display: none; }
-  .stop.submitted .stop-done-flag { display: block; }
-  .stop.submitted .stop-head { border-left-color: var(--green); }
+  #hdr h1 span { color: var(--red); }
+  #hdr-right { display: flex; align-items: center; gap: 8px; }
+  #hdr-meta { font-size: 10px; color: var(--dim); font-family: 'Barlow Condensed', sans-serif; letter-spacing: .04em; }
+  #refresh-btn {
+    background: none; border: 1px solid var(--border); color: var(--dim);
+    border-radius: 4px; padding: 5px 10px; font-size: 11px; cursor: pointer;
+    font-family: 'Barlow Condensed', sans-serif; letter-spacing: .06em; text-transform: uppercase;
+    transition: all .2s;
+  }
+  #refresh-btn:hover { border-color: var(--red); color: var(--white); }
 
-  .stop-body { padding: 0 16px 16px; }
+  /* ── Date bar ── */
+  #datebar {
+    position: sticky; top: 44px; z-index: 99;
+    display: flex; align-items: center; gap: 8px; padding: 7px 14px;
+    background: var(--dark); border-bottom: 1px solid var(--border);
+  }
+  .date-btn {
+    background: none; border: 1px solid var(--border); color: var(--dim);
+    border-radius: 3px; padding: 3px 10px; font-size: 13px; cursor: pointer; transition: all .15s;
+  }
+  .date-btn:hover { border-color: var(--white); color: var(--white); }
+  #date-label {
+    font-family: 'Barlow Condensed', sans-serif; font-size: 13px; font-weight: 600;
+    letter-spacing: .04em; color: var(--white); flex: 1; text-align: center;
+  }
+  .today-btn {
+    font-size: 10px; color: var(--red); border-color: var(--red);
+    padding: 3px 8px;
+  }
 
-  /* STATUS BUTTONS */
-  .status-label { font-family: 'Oswald', sans-serif; font-size: 10px; letter-spacing: 0.18em;
-    text-transform: uppercase; color: var(--mut); margin: 4px 0 9px; }
-  .status-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-  .status-btn { padding: 14px 8px; border: 1px solid var(--line); background: var(--panel2);
-    color: var(--txt); font-family: 'Oswald', sans-serif; font-size: 13px; font-weight: 600;
-    letter-spacing: 0.06em; text-transform: uppercase; border-radius: 4px; cursor: pointer;
-    transition: all 0.12s ease; }
-  .status-btn:active { transform: scale(0.96); }
-  .status-btn.sel { background: var(--red); border-color: var(--red);
-    box-shadow: 0 3px 10px rgba(196,18,48,0.35); }
-  .status-btn.sel.skip { background: #555; border-color: #555; box-shadow: none; }
+  /* ══════════════════════════════════════════
+     SECTION 1 — MAP
+  ══════════════════════════════════════════ */
+  #map-section { position: relative; }
+  #map { height: 44vh; width: 100%; }
 
-  /* PHOTOS */
-  .photo-label { font-family: 'Oswald', sans-serif; font-size: 10px; letter-spacing: 0.18em;
-    text-transform: uppercase; color: var(--mut); margin: 16px 0 9px; }
-  .photo-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
-  .photo-thumb { position: relative; aspect-ratio: 1; border-radius: 4px; overflow: hidden;
-    border: 1px solid var(--line); }
-  .photo-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
-  .photo-thumb .rm { position: absolute; top: 2px; right: 2px; width: 22px; height: 22px;
-    background: rgba(196,18,48,0.92); color: #fff; border: none; border-radius: 3px;
-    font-size: 15px; line-height: 1; cursor: pointer; font-weight: 700; }
-  .photo-add { aspect-ratio: 1; border: 2px dashed var(--line); border-radius: 4px;
-    background: var(--panel2); color: var(--mut); display: flex; flex-direction: column;
-    align-items: center; justify-content: center; gap: 4px; cursor: pointer;
-    font-family: 'Oswald', sans-serif; font-size: 10px; letter-spacing: 0.1em;
-    text-transform: uppercase; }
-  .photo-add:active { border-color: var(--red); color: var(--red-br); }
-  .photo-add .plus { font-size: 26px; line-height: 1; font-weight: 300; }
-  .photo-add input { display: none; }
 
-  /* PER-STOP SUBMIT */
-  .stop-submit { width: 100%; margin-top: 16px; padding: 16px;
-    background: linear-gradient(135deg, var(--red), var(--red-dk)); color: #fff;
-    border: none; border-radius: 4px; font-family: 'Oswald', sans-serif; font-size: 15px;
-    font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; cursor: pointer;
-    box-shadow: 0 4px 16px rgba(196,18,48,0.3); transition: all 0.12s ease; }
-  .stop-submit:active { transform: scale(0.98); }
-  .stop-submit:disabled { background: #333; color: #666; box-shadow: none; cursor: default; }
-  .stop-submit.done { background: linear-gradient(135deg, #2fae5a, #1f7d3a);
-    box-shadow: 0 4px 16px rgba(47,174,90,0.3); }
+  /* ══════════════════════════════════════════
+     SECTION 2 — STATUS CARDS
+  ══════════════════════════════════════════ */
+  #status-section { padding: 12px 14px; border-bottom: 2px solid var(--border); }
+  #status-section-title {
+    font-family: 'Barlow Condensed', sans-serif; font-size: 11px; font-weight: 700;
+    letter-spacing: .14em; text-transform: uppercase; color: var(--muted);
+    margin-bottom: 10px;
+  }
+  #status-cards { display: flex; flex-direction: column; gap: 8px; }
 
-  /* EMPTY / LOADING */
-  .note { text-align: center; color: var(--mut); padding: 40px 20px; font-size: 14px; line-height: 1.7; }
-  .spinner { width: 38px; height: 38px; border: 3px solid var(--line); border-top-color: var(--red);
-    border-radius: 50%; animation: spin 0.8s linear infinite; margin: 50px auto 16px; }
+  .status-card {
+    background: var(--panel); border-bottom: 1px solid var(--border);
+    padding: 16px 18px; display: grid;
+    grid-template-columns: 80px 1px 130px 1px 1fr;
+    align-items: center; gap: 0; min-height: 72px;
+  }
+  .sc-asset {
+    font-family: 'Barlow Condensed', sans-serif; font-size: 36px; font-weight: 900;
+    letter-spacing: -.5px; line-height: 1;
+  }
+  .sc-divider { width: 1px; background: var(--border); align-self: stretch; margin: 0 16px; }
+  .sc-etr-label, .sc-orders-label {
+    font-size: 10px; color: #666; text-transform: uppercase;
+    letter-spacing: .12em; font-family: 'Barlow Condensed', sans-serif; margin-bottom: 3px;
+  }
+  .sc-etr-val {
+    font-family: 'Barlow Condensed', sans-serif; font-size: 26px; font-weight: 700;
+    line-height: 1; color: #ffffff;
+  }
+  .sc-order-item {
+    font-family: 'Barlow Condensed', sans-serif; font-size: 13px; font-weight: 500;
+    color: #ccc; line-height: 1.7; letter-spacing: .02em;
+  }
+
+
+
+  /* Loading / empty */
+  .empty { padding: 40px 20px; text-align: center; color: var(--muted); font-size: 13px; }
+  .spinner {
+    display: inline-block; width: 16px; height: 16px;
+    border: 2px solid var(--border); border-top-color: var(--red);
+    border-radius: 50%; animation: spin .7s linear infinite; vertical-align: middle; margin-right: 6px;
+  }
   @keyframes spin { to { transform: rotate(360deg); } }
 
-  /* TOAST */
-  .toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%) translateY(80px);
-    background: #fff; color: #111; font-family: 'Oswald', sans-serif; font-weight: 600;
-    font-size: 13px; letter-spacing: 0.06em; padding: 14px 22px; border-radius: 4px;
-    box-shadow: 0 8px 30px rgba(0,0,0,0.5); z-index: 100; opacity: 0;
-    transition: all 0.3s cubic-bezier(0.2,0.8,0.2,1); max-width: 90%; text-align: center; }
-  .toast.show { transform: translateX(-50%) translateY(0); opacity: 1; }
-  .toast.err { background: var(--red); color: #fff; }
-  .toast.ok  { background: var(--green); color: #fff; }
+  /* Truck label marker — floating text + arrow, no circle */
+  .truck-label {
+    display: flex; align-items: center; gap: 4px;
+    cursor: pointer; white-space: nowrap;
+    filter: drop-shadow(0 1px 3px rgba(0,0,0,.9)) drop-shadow(0 0 6px rgba(0,0,0,.7));
+  }
+  .truck-label-text {
+    font-family: 'Barlow Condensed', sans-serif; font-size: 15px; font-weight: 700;
+    letter-spacing: .04em; line-height: 1;
+    text-shadow: 0 0 4px rgba(0,0,0,1), 1px 1px 0 rgba(0,0,0,1), -1px -1px 0 rgba(0,0,0,1);
+  }
+  .truck-label-arrow {
+    font-size: 13px; line-height: 1; display: inline-block;
+    text-shadow: 0 0 4px rgba(0,0,0,1);
+    transition: transform .3s;
+  }
 
-  /* DATE PICKER */
-  .date-bar { display: flex; align-items: center; gap: 10px; margin-bottom: 4px;
-    background: var(--panel); border: 1px solid var(--line); border-radius: 4px; padding: 10px 14px; }
-  .date-bar label { font-family: 'Oswald', sans-serif; font-size: 11px; letter-spacing: 0.18em;
-    text-transform: uppercase; color: var(--mut); white-space: nowrap; }
-  .date-bar input[type=date] { flex: 1; background: transparent; border: none;
-    color: var(--txt); font-family: 'Barlow', sans-serif; font-size: 15px; font-weight: 600;
-    cursor: pointer; min-width: 0; }
-  .date-bar input[type=date]:focus { outline: none; }
-  .date-bar input[type=date]::-webkit-calendar-picker-indicator { filter: invert(0.6); cursor: pointer; }
-  .date-today-btn { font-family: 'Oswald', sans-serif; font-size: 10px; letter-spacing: 0.12em;
-    text-transform: uppercase; background: none; border: 1px solid var(--line); color: var(--mut);
-    padding: 5px 10px; border-radius: 3px; cursor: pointer; white-space: nowrap; }
-  .date-today-btn:active { border-color: var(--red); color: var(--red-br); }
-  .date-past-badge { font-family: 'Oswald', sans-serif; font-size: 9px; letter-spacing: 0.14em;
-    text-transform: uppercase; color: var(--amber); border: 1px solid rgba(224,160,32,0.4);
-    padding: 3px 7px; border-radius: 2px; white-space: nowrap; }
-
-  /* PHOTO SOURCE BUTTONS */
-  .photo-source-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 8px; }
-  .photo-src-btn { padding: 11px 8px; border: 1px dashed var(--line); background: var(--panel2);
-    color: var(--mut); font-family: 'Oswald', sans-serif; font-size: 11px; letter-spacing: 0.1em;
-    text-transform: uppercase; border-radius: 4px; cursor: pointer; display: flex;
-    align-items: center; justify-content: center; gap: 6px; }
-  .photo-src-btn:active { border-color: var(--red); color: var(--red-br); }
-  .photo-src-btn input { display: none; }
-  .photo-src-icon { font-size: 18px; }
-
-  .change-link { display: inline-block; margin-top: 8px; color: var(--mut);
-    font-family: 'Oswald', sans-serif; font-size: 10px; letter-spacing: 0.14em;
-    text-transform: uppercase; text-decoration: underline; cursor: pointer; }
-  .selected-banner { background: var(--panel); border: 1px solid var(--line);
-    border-left: 4px solid var(--green); border-radius: 4px; padding: 12px 15px;
-    display: flex; align-items: center; justify-content: space-between; }
-  .selected-banner .who { font-family: 'Oswald', sans-serif; font-size: 14px; font-weight: 600; }
-  .selected-banner .who span { color: var(--mut); font-weight: 500; }
 </style>
 </head>
 <body>
-<header>
-  <div>
-    <div class="h-title">BCC Driver Submit</div>
-    <div class="h-sub">Delivery Status &amp; Photos</div>
+
+<!-- Header -->
+<div id="hdr">
+  <h1><span>BCC</span> Fleet</h1>
+  <div id="hdr-right">
+    <div id="hdr-meta">—</div>
+    <button id="refresh-btn" onclick="load()">↻ Refresh</button>
   </div>
-  <div class="h-fallback">Fallback Mode</div>
-</header>
+</div>
 
-<main id="app">
-  <div class="spinner"></div>
-  <div class="note">Loading today's routes…</div>
-</main>
+<!-- Date nav -->
+<div id="datebar">
+  <button class="date-btn" onclick="shiftDate(-1)">‹</button>
+  <div id="date-label">—</div>
+  <button class="date-btn" onclick="shiftDate(1)">›</button>
+  <button class="date-btn today-btn" onclick="resetDate()">Today</button>
+</div>
 
-<div class="toast" id="toast"></div>
+<!-- SECTION 1: Map -->
+<div id="map-section">
+  <div id="map"></div>
+
+</div>
+
+<!-- SECTION 2: Status -->
+<div id="status-section">
+  <div id="status-section-title">Truck Status</div>
+  <div id="status-cards"><div class="empty"><span class="spinner"></span>Loading…</div></div>
+</div>
+
+
+
+
 
 <script>
-// ── CONFIG ────────────────────────────────────────────────────────────────
-const DB = 'https://bccsms-27c55-default-rtdb.firebaseio.com';
-const DQ_ENDPOINT = 'https://dqtapim.azure-api.net/BensContractorCenter?subscription-key=b14ba32fef4b4c959d044af313e2b220';
+'use strict';
 
-// ── DQ WRITE-BACK ─────────────────────────────────────────────────────────────
-const DQ_HEADERS = { 'Content-Type': 'application/json', 'Accept': 'application/json' };
+const DB           = 'https://bccsms-27c55-default-rtdb.firebaseio.com';
+const MAPBOX_TOKEN = 'pk.eyJ1IjoiYmVuc2dyZWF0b3V0ZG9vcnMiLCJhIjoiY21wbzBqdmh4MDB6ZjJybzhjNnhrdHphdyJ9.ppB9r_WJZwwT6u0lSO0xpw';
+const YARD = { lng: -83.0857, lat: 43.3447 };
+const YARD_RADIUS_MILES = 0.3;  // within 0.3 miles = at yard
 
-// Map driver status keys to DQ orderTripStatus names
-const DQ_STATUS_MAP = {
-  'Arrived':          'Arrived',
-  'Delivered':        'Delivered w/Signature',
-  'Delivered No Sig': 'Delivered No/Signature',
-  'Skipped':          'Not Delivered',
-};
-
-async function dqMutation(query, variables) {
-  const r = await fetch(DQ_ENDPOINT, {
-    method: 'POST',
-    headers: DQ_HEADERS,
-    body: JSON.stringify({ query, variables: variables || {} }),
-  });
-  if (!r.ok) throw new Error(`DQ HTTP ${r.status}`);
-  const data = await r.json();
-  if (data.errors && data.errors.length) {
-    console.warn('DQ mutation errors:', data.errors);
-  }
-  return data;
+function milesFromYard(lat, lng) {
+  const toRad = d => d * Math.PI / 180;
+  const dLat = toRad(lat - YARD.lat);
+  const dLng = toRad(lng - YARD.lng);
+  const a = Math.sin(dLat/2)**2 + Math.cos(toRad(YARD.lat)) * Math.cos(toRad(lat)) * Math.sin(dLng/2)**2;
+  return 3958.8 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
 }
 
-async function dqWriteBackStatus(dqOrderId, status, now) {
-  if (!dqOrderId) return { skipped: 'no dqOrderId' };
-  const nowIso = now.toISOString();
-  const results = {};
+function isAtYard(gpsLat, gpsLng, gpsStatus) {
+  if (!gpsLat || !gpsLng) return false;
+  if (gpsStatus === 'MOVING') return false;
+  // Use last known position regardless of staleness — a parked truck
+  // at the yard hours ago is still at the yard
+  return milesFromYard(gpsLat, gpsLng) <= YARD_RADIUS_MILES;
+}
+const COLORS = ['#ff4444','#ff9900','#00ff88','#44aaff','#dd44ff','#00ffcc','#ff44aa','#ffee00','#00ddff','#ff6600'];
 
-  // Write arrivalTime and deliveryTime to the order
-  const isDelivery = status === 'Delivered' || status === 'Delivered No Sig';
-  const isArrived  = status === 'Arrived';
+let map, dateOffset = 0, allMarkers = [], geocodeCache = {}, driveTimeCache = {}, lastLoadDay = null;
+
+// ── Date ─────────────────────────────────────────────────────────────────
+function todayStr(off = 0) {
+  const d = new Date(); d.setDate(d.getDate() + off);
+  return d.toISOString().slice(0, 10);
+}
+function fmtDate(iso) {
+  const dt = new Date(iso + 'T12:00:00');
+  const days = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const today = todayStr(0), tom = todayStr(1), yes = todayStr(-1);
+  const tag = iso===today?'Today · ':iso===tom?'Tomorrow · ':iso===yes?'Yesterday · ':'';
+  return `${tag}${days[dt.getDay()]} ${months[dt.getMonth()]} ${dt.getDate()}`;
+}
+function fmtTime(iso) {
+  if (!iso) return '';
   try {
-    const input = { id: Number(dqOrderId) };
-    if (isArrived || isDelivery) input.arrivalTime  = nowIso;
-    if (isDelivery)              input.deliveryTime = nowIso;
-    await dqMutation(
-      `mutation UpdateOrder($input: UpdateOrderInput!) {
-         updateOrder(input: $input) { __typename }
-       }`,
-      { input }
-    );
-    results.orderUpdated = true;
-  } catch(e) {
-    results.orderError = e.message;
-    console.warn('DQ updateOrder failed:', e);
-  }
-
-  return results;
+    const d = new Date(iso);
+    const h = d.getHours(), m = d.getMinutes();
+    return `${h%12||12}:${String(m).padStart(2,'0')} ${h<12?'AM':'PM'}`;
+  } catch { return ''; }
 }
-const PHOTO_MAX_PX = 1000;
-const PHOTO_QUALITY = 0.70;
-const STATUSES = [
-  { key: 'Arrived',                label: 'Arrived' },
-  { key: 'Delivered',             label: 'Delivered' },
-  { key: 'Delivered No Sig',      label: 'Delivered — No Sig', short: 'Del. No Sig' },
-  { key: 'Skipped',               label: 'Skipped', skip: true },
-];
+function shiftDate(n) { dateOffset += n; geocodeCache = {}; driveTimeCache = {}; updateDateLabel(); load(); }
+function checkDayRollover() { const d = todayStr(0); if (lastLoadDay && lastLoadDay !== d) { geocodeCache = {}; driveTimeCache = {}; } lastLoadDay = d; }
+function resetDate()  { dateOffset = 0;  geocodeCache = {}; updateDateLabel(); load(); }
+function updateDateLabel() {
+  document.getElementById('date-label').textContent = fmtDate(todayStr(dateOffset));
+}
 
-// ── STATE ─────────────────────────────────────────────────────────────────
-const ST = {
-  routes: {},
-  driver: null,
-  asset: null,
-  manual: false,
-  stops: [],          // resolved stops for chosen driver+asset
-  draft: {},          // stopId -> { status, photos: [dataURL,...] }
-  selectedDate: null, // null = today; YYYY-MM-DD string for past dates
-};
-
-// ── DB HELPERS (plain REST, same pattern as dispatcher) ─────────────────────
+// ── Firebase ──────────────────────────────────────────────────────────────
 async function dbGet(path) {
   const r = await fetch(`${DB}/${path}.json`);
   if (!r.ok) throw new Error(`DB ${r.status}`);
   return r.json();
 }
-async function dbPatch(path, data) {
-  const r = await fetch(`${DB}/${path}.json`, {
-    method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(data),
-  });
-  if (!r.ok) throw new Error(`DB ${r.status}`);
-  return r.json();
-}
-async function dbPush(path, data) {
-  const r = await fetch(`${DB}/${path}.json`, {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(data),
-  });
-  if (!r.ok) throw new Error(`DB ${r.status}`);
-  return r.json();
-}
 
-// ── UTIL ────────────────────────────────────────────────────────────────────
-function esc(s) { return String(s==null?'':s).replace(/[&<>"']/g, c =>
-  ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
-function localDateKey(d) {
-  // Use local year/month/day — avoids UTC offset flipping the date
-  const dt = d || new Date();
-  return dt.getFullYear() + '-' +
-    String(dt.getMonth()+1).padStart(2,'0') + '-' +
-    String(dt.getDate()).padStart(2,'0');
-}
-function todayKey() { return localDateKey(); }
-function activeKey() { return ST.selectedDate || todayKey(); }
-function isToday() { return activeKey() === todayKey(); }
-function toast(msg, kind) {
-  const t = document.getElementById('toast');
-  t.className = 'toast show' + (kind ? ' ' + kind : '');
-  t.textContent = msg;
-  clearTimeout(toast._t);
-  toast._t = setTimeout(() => { t.className = 'toast'; }, 3200);
-}
-
-// Compress an image File to a capped-size JPEG data URL
-function compressImage(file) {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    const url = URL.createObjectURL(file);
-    img.onload = () => {
-      URL.revokeObjectURL(url);
-      let { width, height } = img;
-      if (width > height && width > PHOTO_MAX_PX) { height = Math.round(height * PHOTO_MAX_PX / width); width = PHOTO_MAX_PX; }
-      else if (height >= width && height > PHOTO_MAX_PX) { width = Math.round(width * PHOTO_MAX_PX / height); height = PHOTO_MAX_PX; }
-      const cv = document.createElement('canvas');
-      cv.width = width; cv.height = height;
-      cv.getContext('2d').drawImage(img, 0, 0, width, height);
-      resolve(cv.toDataURL('image/jpeg', PHOTO_QUALITY));
-    };
-    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('image load failed')); };
-    img.src = url;
-  });
-}
-
-// ── LOAD ──────────────────────────────────────────────────────────────────
-async function load() {
+// ── Geocode ───────────────────────────────────────────────────────────────
+async function geocode(addr) {
+  if (!addr) return null;
+  // Normalize address — fix common DQ issues before geocoding
+  let clean = addr.trim()
+    .replace(/\s+/g, ' ')                          // collapse whitespace
+    .replace(/,\s*MI\s*$/i, ', MI')               // normalize state
+    .replace(/\bRD\.\s/gi, 'RD ')               // "RD." → "RD"
+    .replace(/\bST\.\s/gi, 'ST ')               // "ST." → "ST"
+    .replace(/\bDR\.\s/gi, 'DR ')               // "DR." → "DR"
+    .replace(/\bAVE\.\s/gi, 'AVE ')             // "AVE." → "AVE"
+    .replace(/\bHWY\.\s/gi, 'HWY ')             // "HWY." → "HWY"
+    .replace(/N\.\s(?=\w)/g, 'N ')              // "N. " → "N "
+    .replace(/S\.\s(?=\w)/g, 'S ')              // "S. " → "S "
+    .replace(/E\.\s(?=\w)/g, 'E ')              // "E. " → "E "
+    .replace(/W\.\s(?=\w)/g, 'W ')              // "W. " → "W "
+    .replace(/([A-Z]+),([A-Z])/g, '$1, $2');       // fix missing space after comma
+  // If address has no city/state, append Michigan
+  if (!/,/.test(clean)) clean = clean + ', MI';
+  if (geocodeCache[clean] !== undefined) return geocodeCache[clean];
   try {
-    ST.routes = (await dbGet('routes')) || {};
-  } catch (e) {
-    ST.routes = {};
-  }
-  renderPickDriver();
+    const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(clean)}.json`
+              + `?access_token=${MAPBOX_TOKEN}&country=US&limit=1&proximity=${YARD.lng},${YARD.lat}`;
+    const j = await (await fetch(url)).json();
+    const f = j.features?.[0];
+    const result = f ? { lng: f.center[0], lat: f.center[1] } : null;
+    geocodeCache[clean] = result;
+    geocodeCache[addr] = result; // cache original too
+    return result;
+  } catch { geocodeCache[clean] = null; geocodeCache[addr] = null; return null; }
 }
 
-// Build driver -> [{asset, routeId}] map from selected date's routes
-// All unique driver names across all routes in Firebase
-function allDrivers() {
-  const names = new Set();
-  Object.entries(ST.routes).forEach(([rid, r]) => {
-    if (!r || rid === 'UNASSIGNED') return;
-    const drv = (r.driverName || '').trim();
-    if (drv) names.add(drv);
-  });
-  return [...names].sort();
-}
-
-function driverIndex() {
-  const dk = activeKey();
-  const dkDate = new Date(dk + 'T12:00:00');
-  const prev = localDateKey(new Date(dkDate - 864e5));
-  const next = localDateKey(new Date(+dkDate + 864e5));
-  const validDates = new Set([dk, prev, next]);
-
-  const map = {};
-  Object.entries(ST.routes).forEach(([rid, r]) => {
-    if (!r || !validDates.has(r.date)) return;
-    if (rid === 'UNASSIGNED') return;
-    const drv = (r.driverName || '').trim();
-    if (!drv) return;
-    const asset = [r.asset, r.assetDescription].filter(Boolean).join(' ').trim() || '—';
-    map[drv] = map[drv] || {};
-    map[drv][asset] = map[drv][asset] || [];
-    map[drv][asset].push(rid);
-  });
-  return map;
-}
-
-// ── RENDER: PICK DRIVER — shows all known drivers, no date filter ────────────
-function renderPickDriver() {
-  const app = document.getElementById('app');
-  const drivers = allDrivers();
-
-  let html = `<div class="step-label">Who are you?</div>`;
-  if (drivers.length) {
-    html += `<div class="pick-grid">` + drivers.map(d =>
-      `<button class="pick" onclick="pickDriver('${esc(d)}')">
-        <span class="nm">${esc(d)}</span>
-      </button>`
-    ).join('') + `</div>`;
-  } else {
-    html += `<div class="note">No drivers found. Use manual entry below.</div>`;
-  }
-
-  html += `<div class="manual-toggle">
-    <button onclick="toggleManual()">Driver not listed? Enter manually</button>
-  </div>
-  <div class="manual-fields" id="manual-fields">
-    <input class="field-input" id="m-driver" placeholder="Your name" autocomplete="name">
-    <input class="field-input" id="m-asset" placeholder="Asset / unit (e.g. 537 Boom)">
-    <button class="stop-submit" onclick="pickManual()">Continue</button>
-  </div>`;
-
-  app.innerHTML = html;
-  if (ST.manual) document.getElementById('manual-fields').classList.add('show');
-}
-
-function toggleManual() {
-  ST.manual = !ST.manual;
-  document.getElementById('manual-fields').classList.toggle('show', ST.manual);
-}
-
-function pickManual() {
-  const d = document.getElementById('m-driver').value.trim();
-  const a = document.getElementById('m-asset').value.trim();
-  if (!d) { toast('Enter your name', 'err'); return; }
-  if (!a) { toast('Enter your asset/unit', 'err'); return; }
-  ST.driver = d; ST.asset = a; ST.manualEntry = true;
-  resolveStops();
-}
-
-function pickDriver(d) {
-  ST.driver = d;
-  ST.selectedDate = null; // default to today when picking a driver
-  const idx = driverIndex();
-  const assets = Object.keys(idx[d] || {});
-  if (assets.length === 1) { ST.asset = assets[0]; resolveStops(); }
-  else renderPickAsset(assets);
-}
-
-// ── RENDER: PICK ASSET ──────────────────────────────────────────────────────
-function renderPickAsset(assets) {
-  const app = document.getElementById('app');
-  const today = todayKey();
-  const active = activeKey();
-  const isPast = active !== today;
-  app.innerHTML = `
-    <div class="selected-banner">
-      <div class="who">${esc(ST.driver)}</div>
-      <span class="change-link" onclick="resetAll()">Change</span>
-    </div>
-    <div class="date-bar" style="margin-top:14px">
-      <label>Date</label>
-      <input type="date" id="date-pick" value="${active}" max="${today}" onchange="changeDate(this.value)">
-      ${isPast ? `<span class="date-past-badge">Past Route</span>` : `<button class="date-today-btn" onclick="changeDate('')">Today</button>`}
-    </div>
-    <div class="step-label">Which asset?</div>
-    <div class="pick-grid">` +
-    assets.sort().map(a => `<button class="pick" onclick="pickAsset('${esc(a)}')">
-      <span class="nm">${esc(a)}</span>
-    </button>`).join('') + `</div>`;
-}
-
-function pickAsset(a) { ST.asset = a; resolveStops(); }
-
-// ── RESOLVE STOPS for chosen driver + asset ─────────────────────────────────
-function resolveStops() {
-  const dk = activeKey();
-  const dkDate = new Date(dk + 'T12:00:00');
-  const validDates = new Set([dk,
-    localDateKey(new Date(dkDate - 864e5)),
-    localDateKey(new Date(+dkDate + 864e5))]);
-  const stops = [];
-  Object.entries(ST.routes).forEach(([rid, r]) => {
-    if (!r || !validDates.has(r.date) || rid === 'UNASSIGNED') return;
-    const asset = [r.asset, r.assetDescription].filter(Boolean).join(' ').trim() || '—';
-    const drvMatch = (r.driverName || '').trim() === ST.driver;
-    const assetMatch = asset === ST.asset;
-    // In normal mode require driver+asset match. In manual mode, asset match alone is enough.
-    if (ST.manualEntry ? assetMatch : (drvMatch && assetMatch)) {
-      if (r.stops) Object.entries(r.stops).forEach(([sid, s]) =>
-        stops.push({ routeId: rid, stopId: sid, ...s }));
-    }
-  });
-  stops.sort((a,b) => (a.sequence||0)-(b.sequence||0));
-  ST.stops = stops;
-  // init draft
-  stops.forEach(s => { if (!ST.draft[s.stopId]) ST.draft[s.stopId] = { status: null, photos: [] }; });
-  renderStops();
-}
-
-// ── RENDER: STOPS ───────────────────────────────────────────────────────────
-function renderStops() {
-  const app = document.getElementById('app');
-  const today = todayKey();
-  const active = activeKey();
-  const isPast = active !== today;
-  let html = `
-    <div class="selected-banner">
-      <div class="who">${esc(ST.driver)} <span>· ${esc(ST.asset)}</span></div>
-      <span class="change-link" onclick="resetAll()">Change</span>
-    </div>
-    <div class="date-bar" style="margin-top:14px">
-      <label>Date</label>
-      <input type="date" id="date-pick" value="${active}" max="${today}" onchange="changeDate(this.value)">
-      ${isPast ? `<span class="date-past-badge">Past Route</span>` : `<button class="date-today-btn" onclick="changeDate('')">Today</button>`}
-    </div>
-    <div class="step-label">Update each stop</div>`;
-
-  if (!ST.stops.length) {
-    html += `<div class="note">No stops found for ${esc(ST.driver)} on this date.<br>
-      Try a different date above, or use Change to pick again.</div>`;
-    app.innerHTML = html;
-    return;
-  }
-
-  // Filter out stops already completed (status complete or already submitted this session)
-  const visibleStops = ST.stops.filter(s => {
-    if (s.status === 'complete') return false;
-    const ds = (s.deliveryStatus || '').toLowerCase();
-    if (['delivered w/signature','delivered no/signature','delivered','delivery complete',
-         'delivered partial w/sig','delivered partial no/sig'].some(x => ds.includes(x))) return false;
-    const d = ST.draft[s.stopId];
-    if (d && d.submittedAt) return false;
-    return true;
-  });
-
-  if (!visibleStops.length) {
-    html += `<div class="note" style="text-align:center;padding:32px 16px">
-      <div style="font-size:32px;margin-bottom:12px">✓</div>
-      All stops complete for today!</div>`;
-    app.innerHTML = html;
-    return;
-  }
-
-  html += visibleStops.map(s => stopCardHTML(s)).join('');
-  app.innerHTML = html;
-}
-
-function stopCardHTML(s) {
-  const d = ST.draft[s.stopId] || { status: null, photos: [] };
-  const submitted = !!d.submittedAt;
-  const statusBtns = STATUSES.map(st =>
-    `<button class="status-btn ${st.skip?'skip':''} ${d.status===st.key?'sel':''}"
-      onclick="setStatus('${s.stopId}','${st.key}')" ${submitted?'disabled':''}>${esc(st.short||st.label)}</button>`
-  ).join('');
-
-  const photos = d.photos.map((p, i) =>
-    `<div class="photo-thumb"><img src="${p}">${submitted?'':`<button class="rm" onclick="rmPhoto('${s.stopId}',${i})">×</button>`}</div>`
-  ).join('');
-  const addBtn = submitted ? '' : `
-    <div class="photo-source-row">
-      <label class="photo-src-btn">
-        <span class="photo-src-icon">📷</span><span>Camera</span>
-        <input type="file" accept="image/*" capture multiple onchange="addPhotos('${s.stopId}', this)">
-      </label>
-      <label class="photo-src-btn">
-        <span class="photo-src-icon">🖼️</span><span>Gallery</span>
-        <input type="file" accept="image/*" multiple onchange="addPhotos('${s.stopId}', this)">
-      </label>
-    </div>`;
-
-  return `
-    <div class="stop ${submitted?'submitted':''}" id="stop-${esc(s.stopId)}">
-      <div class="stop-head">
-        <div class="stop-seq">${s.sequence||'•'}</div>
-        <div class="stop-info">
-          <div class="stop-cust">${esc(s.customerName||'—')}</div>
-          <div class="stop-addr">${esc(s.address||'')}</div>
-          <div class="stop-order">${esc(s.orderNumber||'')}</div>
-          <div class="stop-done-flag">✓ Submitted ${d.submittedAt?esc(d.submittedAtLabel):''}</div>
-        </div>
-      </div>
-      <div class="stop-body">
-        <div class="status-label">Status</div>
-        <div class="status-row">${statusBtns}</div>
-        <div class="photo-label">Photos${d.photos.length?` (${d.photos.length})`:''}</div>
-        ${addBtn}
-        <div class="photo-grid">${photos}</div>
-        <button class="stop-submit ${submitted?'done':''}" id="sub-${esc(s.stopId)}"
-          onclick="submitStop('${s.stopId}')" ${submitted?'disabled':''}>
-          ${submitted ? '✓ Submitted' : 'Submit This Stop'}
-        </button>
-      </div>
-    </div>`;
-}
-
-// ── INTERACTIONS ────────────────────────────────────────────────────────────
-function setStatus(stopId, key) {
-  if (ST.draft[stopId].submittedAt) return;
-  ST.draft[stopId].status = key;
-  refreshStop(stopId);
-}
-
-async function addPhotos(stopId, input) {
-  if (ST.draft[stopId].submittedAt) return;
-  const files = Array.from(input.files || []);
-  input.value = '';
-  for (const f of files) {
-    try {
-      const dataUrl = await compressImage(f);
-      ST.draft[stopId].photos.push(dataUrl);
-    } catch (e) { toast('Photo failed to load', 'err'); }
-  }
-  refreshStop(stopId);
-}
-
-function rmPhoto(stopId, i) {
-  if (ST.draft[stopId].submittedAt) return;
-  ST.draft[stopId].photos.splice(i, 1);
-  refreshStop(stopId);
-}
-
-function refreshStop(stopId) {
-  // Re-render the full list so submitted/complete stops are hidden
-  renderStops();
-}
-
-// ── SUBMIT ──────────────────────────────────────────────────────────────────
-async function submitStop(stopId) {
-  const d = ST.draft[stopId];
-  if (!d || d.submittedAt) return;
-  if (!d.status) { toast('Pick a status first', 'err'); return; }
-
-  const s = ST.stops.find(x => x.stopId === stopId);
-  if (!s) { toast('Stop not found', 'err'); return; }
-
-  const btn = document.getElementById('sub-' + stopId);
-  if (btn) { btn.disabled = true; btn.textContent = 'Submitting…'; }
-
-  // Device clock captured at the moment of submit — locked into the record
-  const now = new Date();
-  const submission = {
-    driver:       ST.driver,
-    asset:        ST.asset,
-    status:       d.status,
-    photos:       d.photos,                       // base64 data URLs
-    photoCount:   d.photos.length,
-    submittedAt:  now.toISOString(),              // immutable timestamp
-    submittedAtLocal: now.toLocaleString(),       // human readable, device tz
-    orderNumber:  s.orderNumber || '',
-    customerName: s.customerName || '',
-    address:      s.address || '',
-    source:       'driver-fallback',
-    emailed:      false,                          // poller flips this after emailing
-  };
-
-  // ── 1. Write back to DQ (status + timestamps) ───────────────────────────
-  const dqOrderId = s.dqOrderId || null;
-  let dqResult = {};
-  if (dqOrderId) {
-    if (btn) btn.textContent = 'Writing to DQ…';
-    try {
-      dqResult = await dqWriteBackStatus(dqOrderId, d.status, now);
-    } catch(e) {
-      console.warn('DQ write-back failed:', e);
-      dqResult = { error: e.message };
-    }
-  }
-
+// ── Return ETA ────────────────────────────────────────────────────────────
+async function getDriveMinutes(fromCoords, toCoords) {
+  // Round to ~0.01 degree grid (~0.7mi) to increase cache hits
+  const key = `${Math.round(fromCoords.lat*100)},${Math.round(fromCoords.lng*100)}`;
+  if (driveTimeCache[key] !== undefined) return driveTimeCache[key];
   try {
-    // ── 2. Write to Firebase ─────────────────────────────────────────────
-    const fullSubmission = {
-      ...submission,
-      dqOrderId:   dqOrderId,
-      dqWriteBack: dqResult,
-    };
-    const isPastDq = s.routeId.startsWith('dq_past_');
-    const realRouteId = isPastDq ? s.routeId.replace('dq_past_', '') : s.routeId;
-    if (isPastDq) {
-      await dbPush(`past_submissions`, { ...fullSubmission, routeId: realRouteId });
-    } else {
-      await dbPush(`routes/${s.routeId}/stops/${s.stopId}/driverSubmissions`, fullSubmission);
-      await dbPatch(`routes/${s.routeId}/stops/${s.stopId}`, {
-        deliveryStatus:  d.status,
-        driverUpdatedAt: now.toISOString(),
+    const url = `https://api.mapbox.com/directions/v5/mapbox/driving`
+              + `/${fromCoords.lng},${fromCoords.lat};${toCoords.lng},${toCoords.lat}`
+              + `?access_token=${MAPBOX_TOKEN}&overview=false`;
+    const j = await (await fetch(url)).json();
+    const secs = j.routes?.[0]?.duration;
+    const mins = secs ? Math.round(secs / 60) : null;
+    driveTimeCache[key] = mins;
+    return mins;
+  } catch { return null; }
+}
+
+async function getReturnEta(lastStop) {
+  // Use last completed stop address + completedAt time to anchor the ETR.
+  // Uses DQ spatialData coords if available — eliminates geocoding.
+  if (!lastStop || !lastStop.address) return null;
+  try {
+    const fromCoords = lastStop.coords
+      ? { lat: lastStop.coords[0], lng: lastStop.coords[1] }
+      : await geocode(lastStop.address);
+    if (!fromCoords) return null;
+    const driveMins = await getDriveMinutes(fromCoords, YARD);
+    if (driveMins === null) return null;
+    // Anchor: when the last stop was completed (or now if unknown)
+    const anchor = lastStop.completedAt ? new Date(lastStop.completedAt) : new Date();
+    const eta = new Date(anchor.getTime() + driveMins * 60000);
+    // If ETR is in the past, show it as-is (truck should already be back)
+    const h = eta.getHours(), m = eta.getMinutes();
+    return `${h%12||12}:${String(m).padStart(2,'0')} ${h<12?'AM':'PM'}`;
+  } catch { return null; }
+}
+
+// ── Map ───────────────────────────────────────────────────────────────────
+function initMap() {
+  mapboxgl.accessToken = MAPBOX_TOKEN;
+  map = new mapboxgl.Map({
+    container: 'map',
+    style: 'mapbox://styles/mapbox/dark-v11',
+    center: [YARD.lng, YARD.lat],
+    zoom: 6,
+    attributionControl: false,
+  });
+  map.addControl(new mapboxgl.NavigationControl({ showCompass: false }), 'top-right');
+  // Yard marker — small labeled dot
+  const yardEl = document.createElement('div');
+  yardEl.style.cssText = 'font-family:"Barlow Condensed",sans-serif;font-size:11px;font-weight:700;color:#C41230;text-shadow:0 0 3px #000,1px 1px 0 #000,-1px -1px 0 #000;cursor:default;white-space:nowrap';
+  yardEl.textContent = '● YARD';
+  new mapboxgl.Marker({ element: yardEl, anchor: 'center' })
+    .setLngLat([YARD.lng, YARD.lat])
+    .addTo(map);
+}
+
+function clearMarkers() { allMarkers.forEach(m => m.remove()); allMarkers = []; }
+
+
+function directionArrow(degrees) {
+  // Convert compass heading to a Unicode arrow character
+  // 0=N, 90=E, 180=S, 270=W — rotate an up-arrow
+  if (degrees == null) return '';
+  // Use CSS rotation on an arrow character
+  return degrees;
+}
+
+function addTruckMarker(coords, driver, asset, color, returnEta, allDone, gpsSpeed, gpsStatus, gpsDirection, gpsFuelLevel) {
+  const labelColor = allDone ? '#888' : color;
+  const label = asset || (driver || '?').split(' ')[0];
+
+  const wrapper = document.createElement('div');
+  wrapper.className = 'truck-label';
+
+  // Direction arrow — rotated triangle using CSS, shown next to text
+  if (gpsStatus === 'MOVING' && gpsDirection != null) {
+    const arrow = document.createElement('span');
+    arrow.className = 'truck-label-arrow';
+    arrow.textContent = '▲';
+    arrow.style.color = labelColor;
+    // CSS rotation: 0deg = pointing up (North). Rotate clockwise by heading.
+    arrow.style.transform = `rotate(${gpsDirection}deg)`;
+    wrapper.appendChild(arrow);
+  }
+
+  const text = document.createElement('span');
+  text.className = 'truck-label-text';
+  text.textContent = label;
+  text.style.color = labelColor;
+  wrapper.appendChild(text);
+
+  const etaHtml = returnEta
+    ? `<div style="color:#f39c12;font-size:11px;margin-top:3px">🏠 ETR: ${returnEta}</div>`
+    : allDone ? `<div style="color:#2ecc71;font-size:11px;margin-top:3px">✓ All done</div>` : '';
+  const speedHtml = (gpsSpeed > 0 && gpsStatus === 'MOVING')
+    ? `<div style="color:#aaa;font-size:11px;margin-top:2px">🚛 ${gpsSpeed} mph</div>` : '';
+  const fuelHtml = '';
+
+  wrapper.addEventListener('click', () => {
+    new mapboxgl.Popup({ offset: 10, closeButton: false })
+      .setLngLat([coords.lng, coords.lat])
+      .setHTML(`<div style="font-family:'Barlow Condensed',sans-serif">
+        <div style="font-weight:700;font-size:14px;color:${labelColor}">${label}</div>
+        <div style="font-size:12px;color:#ccc">${driver || ''}</div>
+        ${etaHtml}${speedHtml}
+      </div>`)
+      .addTo(map);
+  });
+
+  const marker = new mapboxgl.Marker({ element: wrapper, anchor: 'center' })
+    .setLngLat([coords.lng, coords.lat]).addTo(map);
+  allMarkers.push(marker);
+}
+
+// ── Build driver data ─────────────────────────────────────────────────────
+function buildDrivers(routes, targetDate, gpsOnly) {
+  const driverMap = {};
+  for (const [routeId, route] of Object.entries(routes || {})) {
+    if (!route || route.date !== targetDate) continue;
+    if (routeId === 'UNASSIGNED') continue;  // skip unassigned — no truck to show
+    const driver = route.driverName || '(Unassigned)';
+    if (!driverMap[driver]) driverMap[driver] = [];
+    driverMap[driver].push({ routeId, route });
+  }
+  const drivers = [];
+  for (const [driver, list] of Object.entries(driverMap)) {
+    list.sort((a, b) => parseInt(a.routeId) - parseInt(b.routeId));
+    const asset = list[0]?.route?.asset || '';
+    // Only mark at yard if the LAST route has timeIn OR GPS is at yard
+    const lastRoute = list[list.length - 1]?.route;
+    // timeIn not used — GPS-based yard detection only
+    // GPS-based yard detection — more reliable than timeIn (DQ never sets it)
+    // Check last known GPS across ALL rounds — use most recent reading
+    let lastGpsLat = null, lastGpsLng = null, lastGpsStatus = '';
+    let latestGpsUpdate = '';
+    for (const r of list) {
+      const upd = r.route?.gpsUpdatedAt || '';
+      if (r.route?.gpsLat && r.route?.gpsLon && upd >= latestGpsUpdate) {
+        lastGpsLat = r.route.gpsLat;
+        lastGpsLng = r.route.gpsLon;
+        lastGpsStatus = r.route.gpsStatus || '';
+        latestGpsUpdate = upd;
+      }
+    }
+    const gpsAtYard = isAtYard(lastGpsLat, lastGpsLng, lastGpsStatus);
+    // tripStatus from last route only
+    const lastTripStatus = lastRoute?.tripStatus || '';
+    const tripStatus = lastTripStatus;
+    const rounds = list.map((r, i) => {
+      const stops = Object.values(r.route.stops || {})
+        .sort((a, b) => (a.sequence||0) - (b.sequence||0));
+      const done = stops.filter(s => s.status === 'complete').length;
+      const currentIdx = stops.findIndex(s => s.status !== 'complete');
+      return { routeId: r.routeId, round: i+1, stops, total: stops.length, done, currentIdx, route: r.route };
+    });
+    const totalStops  = rounds.reduce((a,r)=>a+r.total, 0);
+    const totalDone   = rounds.reduce((a,r)=>a+r.done, 0);
+    const totalWeight = list.reduce((a,r) => a + (parseFloat(r.route.tripWeight)||0), 0);
+    drivers.push({ driver, asset, gpsAtYard, tripStatus, rounds, totalStops, totalDone, totalWeight });
+  }
+  // Add GPS-only assets (on road but no deliveries today)
+  if (gpsOnly && targetDate === todayStr(0)) {
+    const seenAssets = new Set(drivers.map(d => d.asset));
+    for (const [assetNum, pos] of Object.entries(gpsOnly)) {
+      if (!pos || pos.date !== targetDate) continue;
+      if (seenAssets.has(assetNum)) continue;
+      drivers.push({
+        driver:      pos.driver || assetNum,
+        asset:       assetNum,
+        // no timeIn — GPS only
+        tripStatus:  '',
+        rounds:      [],
+        totalStops:  0,
+        totalDone:   0,
+        totalWeight: 0,
+        gpsOnly:     pos,  // raw GPS data
       });
     }
-
-    d.submittedAt = submission.submittedAt;
-    d.submittedAtLabel = now.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
-    refreshStop(stopId);
-    const dqMsg = dqOrderId ? (dqResult.orderUpdated ? ' · DQ ✓' : ' · DQ partial') : '';
-    toast(`Stop submitted ✓${dqMsg}`, 'ok');
-  } catch (e) {
-    if (btn) { btn.disabled = false; btn.textContent = 'Submit This Stop'; }
-    toast('Submit failed — check signal & retry', 'err');
   }
+
+  drivers.sort((a,b) => {
+    if (a.driver==='(Unassigned)') return 1;
+    if (b.driver==='(Unassigned)') return -1;
+    return a.driver.localeCompare(b.driver);
+  });
+  return drivers;
 }
 
-// ── DATE CHANGE ──────────────────────────────────────────────────────────────
-async function changeDate(val) {
-  ST.selectedDate = val || null;
-  ST.stops = [];
-  // Remove any previously fetched past DQ routes so they get re-fetched fresh
-  for (const key of Object.keys(ST.routes)) {
-    if (key.startsWith('dq_past_')) delete ST.routes[key];
-  }
-  if (ST.selectedDate && ST.selectedDate !== todayKey()) {
-    await ensurePastRoutes(ST.selectedDate);
-  }
-  // If driver+asset already chosen, go straight to stops for new date
-  if (ST.driver && ST.asset) {
-    // Re-init draft for new stops
-    resolveStops();
-  } else if (ST.driver) {
-    // Re-render asset picker with updated date
-    const idx = driverIndex();
-    const assets = Object.keys(idx[ST.driver] || {});
-    if (assets.length === 1) { ST.asset = assets[0]; resolveStops(); }
-    else renderPickAsset(assets);
-  } else {
-    renderPickDriver();
-  }
+// ── Render status cards ───────────────────────────────────────────────────
+function renderStatusCards(drivers) {
+  const el = document.getElementById('status-cards');
+  if (!drivers.length) { el.innerHTML = '<div class="empty">No routes for this date.</div>'; return; }
+  el.innerHTML = drivers.map((d, di) => {
+    const color   = COLORS[di % COLORS.length];
+    const allDone = d.totalDone === d.totalStops && d.totalStops > 0;
+    const etrLabel = d.gpsAtYard ? 'IN' : 'ETR';
+    const etrVal   = d.gpsOnly ? '—' : d.gpsAtYard ? 'At Yard' : allDone ? '✓' : '—';
+    const etrColor = d.gpsOnly ? '#888' : d.gpsAtYard ? '#2ecc71' : '#fff';
+    return `
+      <div class="status-card" id="sc-${di}">
+        <div class="sc-asset" style="color:${color}">${d.asset || '—'}</div>
+        <div class="sc-divider"></div>
+        <div>
+          <div class="sc-etr-label">${etrLabel}</div>
+          <div class="sc-etr-val" id="sc-return-${di}" style="color:${etrColor}">${etrVal}</div>
+        </div>
+        <div class="sc-divider"></div>
+        <div>
+          <div class="sc-orders-label">Next Route</div>
+          <div id="sc-orders-${di}"><span class="sc-order-item" style="color:var(--muted)">${d.gpsOnly ? 'No deliveries' : '—'}</span></div>
+        </div>
+      </div>`;
+  }).join('');
 }
 
-// Fetch past routes from DQ if Firebase has none for that date
-async function ensurePastRoutes(dateKey) {
-  const hasRoutes = Object.values(ST.routes).some(r => r && r.date === dateKey);
-  if (hasRoutes) return; // Firebase already has them
+// ── Render rounds & stops ─────────────────────────────────────────────────
 
-  const app = document.getElementById('app');
-  app.innerHTML = '<div class="spinner"></div><div class="note">Loading past routes from DQ…</div>';
+// ── Map markers (async, runs after render) ────────────────────────────────
+async function updateMap(drivers) {
+  clearMarkers();
+  const bounds = new mapboxgl.LngLatBounds();
+  // Don't include yard in bounds — fit to truck positions only
 
-  try {
-    const query = `query($where: OrderFilterInput, $first: Int) {
-      order(where: $where, first: $first) {
-        nodes {
-          id orderNumber deliveryId stopNumber
-          mainCustomerName shipToName
-          shipToAddress { address1 city state }
-          orderTripStatus { name }
-          assignedSales
-          delivery {
-            id timeOut timeIn tripDate
-            asset { assetNumber }
-            userProfile { displayName }
-            estimatedTime totalStops
-          }
-          arrivalTime deliveryTime weight
+  for (let di = 0; di < drivers.length; di++) {
+    const d = drivers[di];
+    const color = COLORS[di % COLORS.length];
+    const allDone = d.totalDone === d.totalStops && d.totalStops > 0;
+    let truckCoords = null;
+
+    // GPS-only asset (no deliveries today — calculate ETR from GPS to yard)
+    if (d.gpsOnly) {
+      const pos = d.gpsOnly;
+      const coords = { lat: pos.gpsLat, lng: pos.gpsLon };
+      // Calculate ETR
+      let gpsOnlyEtr = null;
+      const gpsOnlyAge = pos.gpsUpdatedAt ? (Date.now() - new Date(pos.gpsUpdatedAt).getTime()) / 60000 : 999;
+      const gpsOnlyStale = (pos.gpsStatus === 'MOVING') ? gpsOnlyAge > 10 : gpsOnlyAge > 120;
+      if (!gpsOnlyStale) {
+        const driveMins = await getDriveMinutes(coords, YARD);
+        if (driveMins !== null) {
+          const eta = new Date(Date.now() + driveMins * 60000);
+          const h = eta.getHours(), m = eta.getMinutes();
+          gpsOnlyEtr = `${h%12||12}:${String(m).padStart(2,'0')} ${h<12?'AM':'PM'}`;
         }
       }
-    }`;
-    const resp = await fetch(DQ_ENDPOINT, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        query,
-        variables: { where: { reqDate: { eq: dateKey + 'T00:00:00.000Z' } }, first: 100 }
-      })
-    });
-    const data = await resp.json();
-    const nodes = data?.data?.order?.nodes || [];
-    if (!nodes.length) return;
+      const retElGps = document.getElementById(`sc-return-${di}`);
+      if (retElGps) { retElGps.textContent = gpsOnlyEtr || '—'; retElGps.style.color = '#fff'; }
+      addTruckMarker(coords, d.driver, d.asset, color, gpsOnlyEtr, false,
+        pos.gpsSpeed || 0, pos.gpsStatus || 'PARKED', pos.gpsDirection, pos.gpsFuelLevel);
+      bounds.extend([coords.lng, coords.lat]);
+      continue;
+    }
 
-    // Build synthetic route objects matching Firebase structure
-    const routeMap = {};
-    for (const n of nodes) {
-      const rid = String(n.deliveryId || 'UNASSIGNED');
-      if (rid === 'UNASSIGNED') continue;
-      const delivery = n.delivery || {};
-      const asset = delivery.asset || {};
-      const assetRaw = (asset.assetNumber || '').trim();
-      const parts = assetRaw.split(' ');
-      const assetNum = parts[0] || '';
-      const assetDesc = parts.slice(1).join(' ');
-      const driver = (delivery.userProfile?.displayName || '').trim();
-      const addr = n.shipToAddress || {};
-      const address = [addr.address1, addr.city, addr.state].filter(Boolean).join(', ');
-      const stopId = 'order_' + n.orderNumber;
-      const dqStatus = (n.orderTripStatus?.name || '').toLowerCase();
-      const status = ['delivered', 'delivered no/signature', 'delivered w/signature',
-                      'delivery complete', 'delivery w/signature'].some(s => dqStatus.includes(s))
-                    ? 'complete' : dqStatus === 'cancelled' ? 'skipped' : 'pending';
-
-      if (!routeMap[rid]) {
-        routeMap[rid] = {
-          date: dateKey,
-          driverName: driver,
-          asset: assetNum,
-          assetDescription: assetDesc,
-          stops: {}
-        };
+    // GPS position — search ALL rounds for the most recent GPS reading
+    const lastRoute = d.rounds[d.rounds.length - 1]?.route;
+    let gpsLat = null, gpsLon = null, gpsUpdated = null, gpsSpeed = 0, gpsStatus = 'PARKED';
+    let gpsDirection = null, gpsFuelLevel = null;
+    for (const r of d.rounds) {
+      const rLat = r.route?.gpsLat, rLon = r.route?.gpsLon, rUpd = r.route?.gpsUpdatedAt;
+      if (rLat && rLon && rUpd) {
+        if (!gpsUpdated || rUpd > gpsUpdated) {
+          gpsLat = rLat; gpsLon = rLon; gpsUpdated = rUpd;
+          gpsSpeed     = r.route?.gpsSpeed     || 0;
+          gpsStatus    = r.route?.gpsStatus    || 'PARKED';
+          gpsDirection = r.route?.gpsDirection ?? null;
+          gpsFuelLevel = r.route?.gpsFuelLevel ?? null;
+        }
       }
-      routeMap[rid].stops[stopId] = {
-        sequence:       n.stopNumber || 0,
-        dqOrderId:      n.id || null,
-        orderNumber:    n.orderNumber,
-        customerName:   n.shipToName || n.mainCustomerName || '',
-        address,
-        assignedSales:  n.assignedSales || '',
-        status,
-        deliveryStatus: n.orderTripStatus?.name || '',
-        arrivalTime:    n.arrivalTime || null,
-        deliveryTime:   n.deliveryTime || null,
-        completedAt:    n.deliveryTime || null,
-        weight:         n.weight || null,
-        token:          null,  // no token for past DQ-fetched stops
-      };
+    }
+    const gpsAge = gpsUpdated ? (Date.now() - new Date(gpsUpdated).getTime()) / 60000 : 999;
+    // PARKED trucks update less frequently — allow up to 2 hours before considering stale
+    const gpsStale = gpsStatus === 'MOVING' ? gpsAge > 10 : gpsAge > 120;
+
+    if (gpsLat && gpsLon && !gpsStale) {
+      truckCoords = { lng: gpsLon, lat: gpsLat };
+    }
+    // If GPS is stale and all stops are done, assume truck is back at yard
+    const allRoundsDoneEarly = d.totalStops > 0 && d.rounds.every(r => r.done === r.total && r.total > 0);
+    const atYard = d.gpsAtYard || (allRoundsDoneEarly && gpsStale);
+
+    // ETR — calculate from live GPS position to yard (most accurate)
+    let returnEta = null;
+    if (!atYard) {
+      if (truckCoords) {
+        // Best: drive time from current GPS position to yard
+        const driveMins = await getDriveMinutes(truckCoords, YARD);
+        if (driveMins !== null) {
+          const eta = new Date(Date.now() + driveMins * 60000);
+          const h = eta.getHours(), m = eta.getMinutes();
+          returnEta = `${h%12||12}:${String(m).padStart(2,'0')} ${h<12?'AM':'PM'}`;
+        }
+      }
+
+      // No GPS fallback — if GPS is stale and stops pending, show —
     }
 
-    // Merge into ST.routes under a synthetic key so driverIndex() finds them
-    for (const [rid, route] of Object.entries(routeMap)) {
-      ST.routes['dq_past_' + rid] = route;
+    // Build next round order list — the single next unstarted round only
+    // Rounds are sorted by routeId, so find the first one where no stops are complete
+    // Next round = first fully unstarted round AFTER the last fully completed round.
+    // A round still in progress (done > 0 && done < total) means the truck is
+    // currently on it — don't show its own orders or any later round yet.
+    const inProgressRound = d.rounds.find(r => r.done > 0 && r.done < r.total);
+    let nextRound = null;
+    if (!inProgressRound) {
+      // No round in progress — find the last completed round, show what comes next
+      let lastCompleteIdx = -1;
+      for (let i = d.rounds.length - 1; i >= 0; i--) {
+        if (d.rounds[i].done === d.rounds[i].total && d.rounds[i].total > 0) {
+          lastCompleteIdx = i; break;
+        }
+      }
+      nextRound = lastCompleteIdx === -1
+        ? d.rounds[0]  // nothing done yet — show round 1
+        : d.rounds.find((r, i) => i > lastCompleteIdx && r.done === 0);
     }
+    // If a round is in progress, nextRound stays null — truck is busy with current round
+    const nextOrders = nextRound
+      ? nextRound.stops.filter(s => s.status !== 'skipped' && (s.deliveryStatus || '').toLowerCase() !== 'cancelled').map(s => s.orderNumber || s.customerName || '—').filter(Boolean)
+      : [];
+
+    const retEl = document.getElementById(`sc-return-${di}`);
+    if (retEl && !d.gpsAtYard) {
+      const returning = d.tripStatus === 'Returning';
+      retEl.textContent = returning ? (returnEta || '…') : (returnEta || '—');
+      retEl.style.color = returning ? '#f39c12' : '#fff';
+    }
+
+    // Next route orders
+    const ordersEl = document.getElementById(`sc-orders-${di}`);
+    if (ordersEl) {
+      const showOrders = !atYard && nextOrders.length;
+      ordersEl.innerHTML = showOrders
+        ? nextOrders.map(o => `<div class="sc-order-item">${o}</div>`).join('')
+        : `<span class="sc-order-item" style="color:var(--muted)">—</span>`;
+    }
+
+
+    if (atYard) {
+      addTruckMarker(YARD, d.driver, d.asset, '#444', null, true, 0, 'PARKED', null, gpsFuelLevel);
+    } else if (truckCoords) {
+      addTruckMarker(truckCoords, d.driver, d.asset, color, returnEta, false, gpsSpeed, gpsStatus, gpsDirection, gpsFuelLevel);
+      bounds.extend([truckCoords.lng, truckCoords.lat]);
+    }
+  }
+
+  if (!bounds.isEmpty()) map.fitBounds(bounds, { padding: 80, maxZoom: 11, duration: 800 });
+
+}
+
+// ── Main load ─────────────────────────────────────────────────────────────
+async function load() {
+  checkDayRollover();
+  const btn = document.getElementById('refresh-btn');
+  btn.textContent = '↻ …';
+  try {
+    const [routes, gpsOnly] = await Promise.all([dbGet('routes'), dbGet('gps_only').catch(()=>({}))]);
+    const target  = todayStr(dateOffset);
+    const drivers = buildDrivers(routes, target, gpsOnly || {});
+
+    renderStatusCards(drivers);
+
+    // Update meta
+    const total = drivers.reduce((a,d)=>a+d.totalStops,0);
+    const done  = drivers.reduce((a,d)=>a+d.totalDone,0);
+    document.getElementById('hdr-meta').textContent = new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}) + ' · ' +
+      `${drivers.length} trucks · ${done}/${total} stops`;
+
+    // Geocode + place map markers (async)
+    updateMap(drivers); // intentionally not awaited — updates map progressively
   } catch(e) {
-    console.error('DQ past fetch failed', e);
-    toast('Could not load past routes — check connection', 'err');
+    document.getElementById('status-cards').innerHTML = `<div class="empty">Error: ${e.message}</div>`;
+  } finally {
+    btn.textContent = '↻ Refresh';
   }
 }
 
-// ── RESET ───────────────────────────────────────────────────────────────────
-function resetAll() {
-  ST.driver = null; ST.asset = null; ST.manualEntry = false; ST.stops = [];
-  renderPickDriver();
-}
-
-// ── BOOT ────────────────────────────────────────────────────────────────────
-load();
+// ── Init ──────────────────────────────────────────────────────────────────
+updateDateLabel();
+initMap();
+map.on('load', () => load());
+setInterval(load, 120000);
 </script>
 </body>
 </html>
