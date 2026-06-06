@@ -94,11 +94,6 @@
   .stop-done-flag { font-family: 'Oswald', sans-serif; font-size: 10px; letter-spacing: 0.12em;
     text-transform: uppercase; color: var(--green); margin-top: 6px; display: none; }
   .stop.submitted .stop-done-flag { display: block; }
-  .nav-btn { display:inline-flex; align-items:center; gap:6px; margin-top:8px;
-    background:#1a1a1a; border:1px solid #444; color:#fff;
-    font-family:'Oswald',sans-serif; font-size:12px; font-weight:700; letter-spacing:.08em;
-    padding:8px 16px; border-radius:4px; cursor:pointer; text-decoration:none; }
-  .nav-btn:active { background:#C8102E; border-color:#C8102E; }
   .stop.submitted .stop-head { border-left-color: var(--green); }
 
   .stop-body { padding: 0 16px 16px; }
@@ -219,6 +214,7 @@
 <script>
 // ── CONFIG ────────────────────────────────────────────────────────────────
 const DB = 'https://bccsms-27c55-default-rtdb.firebaseio.com';
+const SUBMIT_URL = 'http://localhost:5050/submit';
 const DQ_ENDPOINT = 'https://dqtapim.azure-api.net/BensContractorCenter?subscription-key=b14ba32fef4b4c959d044af313e2b220';
 
 // ── DQ WRITE-BACK ─────────────────────────────────────────────────────────────
@@ -581,10 +577,6 @@ function stopCardHTML(s) {
           <div class="stop-cust">${esc(s.customerName||'—')}</div>
           <div class="stop-addr">${esc(s.address||'')}</div>
           <div class="stop-order">${esc(s.orderNumber||'')}</div>
-          ${s.address ? `<a class="nav-btn" href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(s.address)}" target="_blank">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="3 11 22 2 13 21 11 13 3 11"/></svg>
-            Navigate
-          </a>` : ''}
           <div class="stop-done-flag">✓ Submitted ${d.submittedAt?esc(d.submittedAtLabel):''}</div>
         </div>
       </div>
@@ -676,23 +668,24 @@ async function submitStop(stopId) {
   }
 
   try {
-    // ── 2. Write to Firebase ─────────────────────────────────────────────
-    const fullSubmission = {
-      ...submission,
-      dqOrderId:   dqOrderId,
-      dqWriteBack: dqResult,
-    };
+    // ── 2. POST to submission server — emails photos directly, writes metadata-only to Firebase ──
     const isPastDq = s.routeId.startsWith('dq_past_');
     const realRouteId = isPastDq ? s.routeId.replace('dq_past_', '') : s.routeId;
-    if (isPastDq) {
-      await dbPush(`past_submissions`, { ...fullSubmission, routeId: realRouteId });
-    } else {
-      await dbPush(`routes/${s.routeId}/stops/${s.stopId}/driverSubmissions`, fullSubmission);
-      await dbPatch(`routes/${s.routeId}/stops/${s.stopId}`, {
-        deliveryStatus:  d.status,
-        driverUpdatedAt: now.toISOString(),
-      });
-    }
+
+    if (btn) btn.textContent = 'Sending…';
+
+    const resp = await fetch(SUBMIT_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        submission: { ...submission, dqOrderId, dqWriteBack: dqResult },
+        routeId:    realRouteId,
+        stopId:     s.stopId,
+        isPast:     isPastDq,
+      }),
+    });
+
+    if (!resp.ok) throw new Error(`Server error ${resp.status}`);
 
     d.submittedAt = submission.submittedAt;
     d.submittedAtLabel = now.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
@@ -701,6 +694,7 @@ async function submitStop(stopId) {
     toast(`Stop submitted ✓${dqMsg}`, 'ok');
   } catch (e) {
     if (btn) { btn.disabled = false; btn.textContent = 'Submit This Stop'; }
+    console.error('Submit failed:', e);
     toast('Submit failed — check signal & retry', 'err');
   }
 }
