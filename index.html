@@ -94,6 +94,11 @@
   .stop-done-flag { font-family: 'Oswald', sans-serif; font-size: 10px; letter-spacing: 0.12em;
     text-transform: uppercase; color: var(--green); margin-top: 6px; display: none; }
   .stop.submitted .stop-done-flag { display: block; }
+  .nav-btn { display:inline-flex; align-items:center; gap:6px; margin-top:8px;
+    background:#1a1a1a; border:1px solid #444; color:#fff;
+    font-family:'Oswald',sans-serif; font-size:12px; font-weight:700; letter-spacing:.08em;
+    padding:8px 16px; border-radius:4px; cursor:pointer; text-decoration:none; }
+  .nav-btn:active { background:#C8102E; border-color:#C8102E; }
   .stop.submitted .stop-head { border-left-color: var(--green); }
 
   .stop-body { padding: 0 16px 16px; }
@@ -214,7 +219,7 @@
 <script>
 // ── CONFIG ────────────────────────────────────────────────────────────────
 const DB = 'https://bccsms-27c55-default-rtdb.firebaseio.com';
-const SUBMIT_URL = 'https://graffiti-coronary-parabola.ngrok-free.dev/submit';
+const SUBMIT_URL = 'https://that-flowers-jacket-winner.trycloudflare.com/submit';
 const DQ_ENDPOINT = 'https://dqtapim.azure-api.net/BensContractorCenter?subscription-key=b14ba32fef4b4c959d044af313e2b220';
 
 // ── DQ WRITE-BACK ─────────────────────────────────────────────────────────────
@@ -577,6 +582,10 @@ function stopCardHTML(s) {
           <div class="stop-cust">${esc(s.customerName||'—')}</div>
           <div class="stop-addr">${esc(s.address||'')}</div>
           <div class="stop-order">${esc(s.orderNumber||'')}</div>
+          ${s.address ? `<a class="nav-btn" href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(s.address)}" target="_blank">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="3 11 22 2 13 21 11 13 3 11"/></svg>
+            Navigate
+          </a>` : ''}
           <div class="stop-done-flag">✓ Submitted ${d.submittedAt?esc(d.submittedAtLabel):''}</div>
         </div>
       </div>
@@ -754,7 +763,7 @@ async function ensurePastRoutes(dateKey) {
     }`;
     const resp = await fetch(DQ_ENDPOINT, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'ngrok-skip-browser-warning': '1' },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         query,
         variables: { where: { reqDate: { eq: dateKey + 'T00:00:00.000Z' } }, first: 100 }
@@ -828,6 +837,50 @@ function resetAll() {
 
 // ── BOOT ────────────────────────────────────────────────────────────────────
 load();
+
+// ── Live refresh — polls Firebase every 120s for new stops ──────────────────
+// Only runs after driver/asset is selected. Merges new stops without
+// disturbing already-submitted ones.
+async function pollForNewStops() {
+  if (!ST.driver || !ST.asset) return; // not yet selected — nothing to do
+  try {
+    const fresh = (await dbGet('routes')) || {};
+    let newStopsFound = false;
+
+    const dk = activeKey();
+    const dkDate = new Date(dk + 'T12:00:00');
+    const validDates = new Set([dk,
+      localDateKey(new Date(dkDate - 864e5)),
+      localDateKey(new Date(+dkDate + 864e5))]);
+
+    Object.entries(fresh).forEach(([rid, r]) => {
+      if (!r || !validDates.has(r.date) || rid === 'UNASSIGNED') return;
+      const asset = [r.asset, r.assetDescription].filter(Boolean).join(' ').trim() || '—';
+      const drvMatch = (r.driverName || '').trim() === ST.driver;
+      const assetMatch = asset === ST.asset;
+      if (!(ST.manualEntry ? assetMatch : (drvMatch && assetMatch))) return;
+
+      if (r.stops) Object.entries(r.stops).forEach(([sid, s]) => {
+        // Only add stops we haven't seen yet
+        if (!ST.stops.find(x => x.stopId === sid)) {
+          ST.stops.push({ routeId: rid, stopId: sid, ...s });
+          if (!ST.draft[sid]) ST.draft[sid] = { status: null, photos: [] };
+          newStopsFound = true;
+        }
+      });
+    });
+
+    if (newStopsFound) {
+      ST.stops.sort((a,b) => (a.sequence||0)-(b.sequence||0));
+      renderStops();
+      toast('New stops added to your route', 'ok');
+    }
+  } catch(e) {
+    // Silent fail — don't interrupt the driver
+  }
+}
+
+setInterval(pollForNewStops, 120000);
 </script>
 </body>
 </html>
