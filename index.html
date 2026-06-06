@@ -676,7 +676,7 @@ async function submitStop(stopId) {
 
     const resp = await fetch(SUBMIT_URL, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'ngrok-skip-browser-warning': '1' },
       body: JSON.stringify({
         submission: { ...submission, dqOrderId, dqWriteBack: dqResult },
         routeId:    realRouteId,
@@ -754,7 +754,7 @@ async function ensurePastRoutes(dateKey) {
     }`;
     const resp = await fetch(DQ_ENDPOINT, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'ngrok-skip-browser-warning': '1' },
       body: JSON.stringify({
         query,
         variables: { where: { reqDate: { eq: dateKey + 'T00:00:00.000Z' } }, first: 100 }
