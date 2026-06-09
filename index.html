@@ -443,7 +443,16 @@ function compressImage(file) {
 // ── LOAD ──────────────────────────────────────────────────────────────────
 async function load() {
   try {
-    ST.routes = (await dbGet('routes')) || {};
+    // Fetch only today's routes — avoids downloading entire DB
+    const dk = activeKey();
+    const prev = localDateKey(new Date(new Date(dk+'T12:00:00') - 864e5));
+    const next = localDateKey(new Date(+new Date(dk+'T12:00:00') + 864e5));
+    const [r1, r2, r3] = await Promise.all([
+      fetch(`${DB}/routes.json?orderBy="date"&equalTo="${prev}"`).then(r=>r.json()).catch(()=>({})),
+      fetch(`${DB}/routes.json?orderBy="date"&equalTo="${dk}"`).then(r=>r.json()).catch(()=>({})),
+      fetch(`${DB}/routes.json?orderBy="date"&equalTo="${next}"`).then(r=>r.json()).catch(()=>({})),
+    ]);
+    ST.routes = Object.assign({}, r1||{}, r2||{}, r3||{});
   } catch (e) {
     ST.routes = {};
   }
@@ -935,14 +944,18 @@ load();
 async function pollForNewStops() {
   if (!ST.driver || !ST.asset) return; // not yet selected — nothing to do
   try {
-    const fresh = (await dbGet('routes')) || {};
-    let newStopsFound = false;
-
     const dk = activeKey();
     const dkDate = new Date(dk + 'T12:00:00');
-    const validDates = new Set([dk,
-      localDateKey(new Date(dkDate - 864e5)),
-      localDateKey(new Date(+dkDate + 864e5))]);
+    const prev = localDateKey(new Date(dkDate - 864e5));
+    const next = localDateKey(new Date(+dkDate + 864e5));
+    const validDates = new Set([dk, prev, next]);
+    const [f1, f2, f3] = await Promise.all([
+      fetch(`${DB}/routes.json?orderBy="date"&equalTo="${prev}"`).then(r=>r.json()).catch(()=>({})),
+      fetch(`${DB}/routes.json?orderBy="date"&equalTo="${dk}"`).then(r=>r.json()).catch(()=>({})),
+      fetch(`${DB}/routes.json?orderBy="date"&equalTo="${next}"`).then(r=>r.json()).catch(()=>({})),
+    ]);
+    const fresh = Object.assign({}, f1||{}, f2||{}, f3||{});
+    let newStopsFound = false;
 
     Object.entries(fresh).forEach(([rid, r]) => {
       if (!r || !validDates.has(r.date) || rid === 'UNASSIGNED') return;
