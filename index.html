@@ -162,6 +162,17 @@
   .toast.err { background: var(--red); color: #fff; }
   .toast.ok  { background: var(--green); color: #fff; }
 
+  /* OFFLINE QUEUE BADGE */
+  .queue-banner { position: fixed; top: 0; left: 0; right: 0; z-index: 200;
+    background: var(--amber); color: #000; font-family: 'Oswald', sans-serif;
+    font-size: 12px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase;
+    padding: 10px 16px; display: none; align-items: center; justify-content: space-between; gap: 10px; }
+  .queue-banner.show { display: flex; }
+  .queue-banner .q-msg { flex: 1; }
+  .queue-banner .q-retry { background: rgba(0,0,0,0.2); border: none; color: #000;
+    font-family: 'Oswald', sans-serif; font-size: 11px; font-weight: 700; letter-spacing: 0.1em;
+    text-transform: uppercase; padding: 6px 12px; border-radius: 3px; cursor: pointer; }
+
   /* DATE PICKER */
   .date-bar { display: flex; align-items: center; gap: 10px; margin-bottom: 4px;
     background: var(--panel); border: 1px solid var(--line); border-radius: 4px; padding: 10px 14px; }
@@ -215,12 +226,84 @@
 </main>
 
 <div class="toast" id="toast"></div>
+<div class="queue-banner" id="queueBanner">
+  <span class="q-msg" id="queueMsg">⚠ 0 submission(s) queued — will send when connected</span>
+  <button class="q-retry" onclick="retryQueue()">Retry Now</button>
+</div>
 
 <script>
 // ── CONFIG ────────────────────────────────────────────────────────────────
 const DB = 'https://bccsms-27c55-default-rtdb.firebaseio.com';
 const SUBMIT_URL = 'https://that-flowers-jacket-winner.trycloudflare.com/submit';
 const DQ_ENDPOINT = 'https://dqtapim.azure-api.net/BensContractorCenter?subscription-key=b14ba32fef4b4c959d044af313e2b220';
+
+// ── OFFLINE QUEUE ────────────────────────────────────────────────────────────
+const QUEUE_KEY = 'bcc_submit_queue';
+
+function queueLoad() {
+  try { return JSON.parse(localStorage.getItem(QUEUE_KEY) || '[]'); } catch { return []; }
+}
+function queueSave(q) {
+  try { localStorage.setItem(QUEUE_KEY, JSON.stringify(q)); } catch(e) { console.warn('queue save failed', e); }
+}
+function queueAdd(item) {
+  const q = queueLoad();
+  q.push({ ...item, queuedAt: new Date().toISOString(), attempts: 0 });
+  queueSave(q);
+  updateQueueBanner();
+}
+function queueRemove(queuedAt) {
+  const q = queueLoad().filter(i => i.queuedAt !== queuedAt);
+  queueSave(q);
+  updateQueueBanner();
+}
+function updateQueueBanner() {
+  const q = queueLoad();
+  const banner = document.getElementById('queueBanner');
+  const msg    = document.getElementById('queueMsg');
+  if (!banner) return;
+  if (q.length === 0) {
+    banner.classList.remove('show');
+  } else {
+    banner.classList.add('show');
+    msg.textContent = `⚠ ${q.length} submission(s) queued — will send when connected`;
+  }
+}
+async function retryQueue() {
+  const q = queueLoad();
+  if (!q.length) return;
+  let sent = 0, failed = 0;
+  for (const item of q) {
+    try {
+      const resp = await fetch(SUBMIT_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'ngrok-skip-browser-warning': '1' },
+        body: JSON.stringify(item.payload),
+      });
+      if (!resp.ok) throw new Error(`Server ${resp.status}`);
+      queueRemove(item.queuedAt);
+      // Mark stop as submitted in draft state
+      if (item.stopId && ST.draft[item.stopId]) {
+        ST.draft[item.stopId].submittedAt = item.payload.submission.submittedAt;
+        ST.draft[item.stopId].submittedAtLabel = new Date(item.payload.submission.submittedAt)
+          .toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+        refreshStop(item.stopId);
+      }
+      sent++;
+    } catch(e) {
+      failed++;
+    }
+  }
+  updateQueueBanner();
+  if (sent > 0 && failed === 0) toast(`${sent} queued submission(s) sent ✓`, 'ok');
+  else if (sent > 0) toast(`${sent} sent, ${failed} still queued`, 'ok');
+  else toast('Still offline — submissions saved', 'err');
+}
+
+// Retry queue on page focus and every 60s
+window.addEventListener('focus', retryQueue);
+window.addEventListener('online', retryQueue);
+setInterval(retryQueue, 60000);
 
 // ── DQ WRITE-BACK ─────────────────────────────────────────────────────────────
 const DQ_HEADERS = { 'Content-Type': 'application/json', 'Accept': 'application/json' };
@@ -695,9 +778,24 @@ async function submitStop(stopId) {
     const dqMsg = dqOrderId ? (dqResult.orderUpdated ? ' · DQ ✓' : ' · DQ partial') : '';
     toast(`Stop submitted ✓${dqMsg}`, 'ok');
   } catch (e) {
-    if (btn) { btn.disabled = false; btn.textContent = 'Submit This Stop'; }
-    console.error('Submit failed:', e);
-    toast('Submit failed — check signal & retry', 'err');
+    console.error('Submit failed — queuing offline:', e);
+    // Save to offline queue — will retry automatically
+    queueAdd({
+      stopId,
+      payload: {
+        submission: { ...submission, dqOrderId, dqWriteBack: dqResult },
+        routeId:    realRouteId,
+        stopId:     s.stopId,
+        isPast:     isPastDq,
+      }
+    });
+    // Mark as submitted locally so driver sees success
+    d.submittedAt = submission.submittedAt;
+    d.submittedAtLabel = now.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+    d.queuedOffline = true;
+    if (btn) { btn.disabled = false; }
+    refreshStop(stopId);
+    toast('Saved offline — will send automatically when connected', 'ok');
   }
 }
 
