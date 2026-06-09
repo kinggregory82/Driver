@@ -528,14 +528,8 @@ function renderStops() {
     return;
   }
 
-  // Filter out stops already completed (status complete or already submitted this session)
+  // Show ALL stops regardless of DQ status — DQ is not always accurate
   const visibleStops = ST.stops.filter(s => {
-    if (s.status === 'complete') return false;
-    const ds = (s.deliveryStatus || '').toLowerCase();
-    if (['delivered w/signature','delivered no/signature','delivered','delivery complete',
-         'delivered partial w/sig','delivered partial no/sig'].some(x => ds.includes(x))) return false;
-    const d = ST.draft[s.stopId];
-    if (d && d.submittedAt) return false;
     return true;
   });
 
@@ -556,13 +550,13 @@ function stopCardHTML(s) {
   const submitted = !!d.submittedAt;
   const statusBtns = STATUSES.map(st =>
     `<button class="status-btn ${st.skip?'skip':''} ${d.status===st.key?'sel':''}"
-      onclick="setStatus('${s.stopId}','${st.key}')" ${submitted?'disabled':''}>${esc(st.short||st.label)}</button>`
+      onclick="setStatus('${s.stopId}','${st.key}')">${esc(st.short||st.label)}</button>`
   ).join('');
 
   const photos = d.photos.map((p, i) =>
-    `<div class="photo-thumb"><img src="${p}">${submitted?'':`<button class="rm" onclick="rmPhoto('${s.stopId}',${i})">×</button>`}</div>`
+    `<div class="photo-thumb"><img src="${p}"><button class="rm" onclick="rmPhoto('${s.stopId}',${i})">×</button></div>`
   ).join('');
-  const addBtn = submitted ? '' : `
+  const addBtn = `
     <div class="photo-source-row">
       <label class="photo-src-btn">
         <span class="photo-src-icon">📷</span><span>Camera</span>
@@ -586,7 +580,7 @@ function stopCardHTML(s) {
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="3 11 22 2 13 21 11 13 3 11"/></svg>
             Navigate
           </a>` : ''}
-          <div class="stop-done-flag">✓ Submitted ${d.submittedAt?esc(d.submittedAtLabel):''}</div>
+          ${submitted?`<div class="stop-done-flag">✓ Submitted ${d.submittedAt?esc(d.submittedAtLabel):''}</div>`:''}
         </div>
       </div>
       <div class="stop-body">
@@ -596,8 +590,8 @@ function stopCardHTML(s) {
         ${addBtn}
         <div class="photo-grid">${photos}</div>
         <button class="stop-submit ${submitted?'done':''}" id="sub-${esc(s.stopId)}"
-          onclick="submitStop('${s.stopId}')" ${submitted?'disabled':''}>
-          ${submitted ? '✓ Submitted' : 'Submit This Stop'}
+          onclick="submitStop('${s.stopId}')">
+          ${submitted ? 'Resubmit This Stop' : 'Submit This Stop'}
         </button>
       </div>
     </div>`;
@@ -605,7 +599,6 @@ function stopCardHTML(s) {
 
 // ── INTERACTIONS ────────────────────────────────────────────────────────────
 function setStatus(stopId, key) {
-  if (ST.draft[stopId].submittedAt) return;
   ST.draft[stopId].status = key;
   refreshStop(stopId);
 }
