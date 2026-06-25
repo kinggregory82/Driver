@@ -785,7 +785,7 @@ async function submitStop(stopId) {
     const isPastDq = s.routeId.startsWith('dq_past_');
     const realRouteId = isPastDq ? s.routeId.replace('dq_past_', '') : s.routeId;
 
-    if (btn) btn.textContent = 'Sending…';
+    if (btn) { btn.textContent = 'Sending…'; btn.disabled = true; }
 
     const resp = await fetch(SUBMIT_URL, {
       method: 'POST',
@@ -800,6 +800,7 @@ async function submitStop(stopId) {
 
     if (!resp.ok) throw new Error(`Server error ${resp.status}`);
 
+    if (btn) { btn.textContent = 'Submit'; btn.disabled = false; }
     d.submittedAt = submission.submittedAt;
     d.submittedAtLabel = now.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
     refreshStop(stopId);
@@ -821,7 +822,7 @@ async function submitStop(stopId) {
     d.submittedAt = submission.submittedAt;
     d.submittedAtLabel = now.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
     d.queuedOffline = true;
-    if (btn) { btn.disabled = false; }
+    if (btn) { btn.textContent = 'Submit'; btn.disabled = false; }
     refreshStop(stopId);
     toast('Saved offline — will send automatically when connected', 'ok');
   }
