@@ -534,11 +534,22 @@ function renderPickDriver() {
       + `<option value="__other__">Not listed — type it in</option>`
     : '';
 
+  const driverOptions = drivers.length
+    ? `<option value="">Select your name…</option>`
+      + drivers.map(d => `<option value="${esc(d)}">${esc(d)}</option>`).join('')
+      + `<option value="__other__">Not listed — type it in</option>`
+    : '';
+
   html += `<div class="manual-toggle">
     <button onclick="toggleManual()">Driver not listed? Enter manually</button>
   </div>
   <div class="manual-fields" id="manual-fields">
-    <input class="field-input" id="m-driver" placeholder="Your name" autocomplete="name">
+    ${drivers.length ? `
+    <select class="field-input" id="m-driver-select" onchange="onManualDriverSelect(this.value)">
+      ${driverOptions}
+    </select>` : ''}
+    <input class="field-input" id="m-driver" placeholder="Your name" autocomplete="name"
+      style="${drivers.length ? 'display:none' : ''}">
     ${assets.length ? `
     <select class="field-input" id="m-asset-select" onchange="onManualAssetSelect(this.value)">
       ${assetOptions}
@@ -557,6 +568,21 @@ function toggleManual() {
   document.getElementById('manual-fields').classList.toggle('show', ST.manual);
 }
 
+// When the driver picks "Not listed — type it in" for their name, reveal
+// the free-text field so they can still enter something, same pattern as
+// the asset dropdown below.
+function onManualDriverSelect(val) {
+  const freeText = document.getElementById('m-driver');
+  if (val === '__other__') {
+    freeText.style.display = '';
+    freeText.value = '';
+    freeText.focus();
+  } else {
+    freeText.style.display = 'none';
+    freeText.value = val;
+  }
+}
+
 // When the driver picks "Not listed — type it in", reveal the free-text
 // field so they can still enter something (with a loosened match below),
 // instead of the dropdown being their only option.
@@ -573,7 +599,12 @@ function onManualAssetSelect(val) {
 }
 
 function pickManual() {
-  const d = document.getElementById('m-driver').value.trim();
+  const driverSelect = document.getElementById('m-driver-select');
+  const driverFreeText = document.getElementById('m-driver');
+  // Prefer the dropdown's exact-matching value; fall back to free text only
+  // if there was no dropdown, or "Not listed" was chosen.
+  const d = (driverSelect && driverSelect.value && driverSelect.value !== '__other__'
+    ? driverSelect.value : driverFreeText.value).trim();
   const select = document.getElementById('m-asset-select');
   const freeText = document.getElementById('m-asset');
   // Prefer the dropdown's exact-matching value; fall back to free text only
