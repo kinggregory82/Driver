@@ -444,16 +444,11 @@ function compressImage(file) {
 // ── LOAD ──────────────────────────────────────────────────────────────────
 async function load() {
   try {
-    // Fetch only today's routes — avoids downloading entire DB
+    // Fetch only the current day's routes — the app should only ever show
+    // today's (or the selected day's) deliveries, never spill into adjacent days.
     const dk = activeKey();
-    const prev = localDateKey(new Date(new Date(dk+'T12:00:00') - 864e5));
-    const next = localDateKey(new Date(+new Date(dk+'T12:00:00') + 864e5));
-    const [r1, r2, r3] = await Promise.all([
-      fetch(`${DB}/routes.json?orderBy="date"&equalTo="${prev}"`).then(r=>r.json()).catch(()=>({})),
-      fetch(`${DB}/routes.json?orderBy="date"&equalTo="${dk}"`).then(r=>r.json()).catch(()=>({})),
-      fetch(`${DB}/routes.json?orderBy="date"&equalTo="${next}"`).then(r=>r.json()).catch(()=>({})),
-    ]);
-    ST.routes = Object.assign({}, r1||{}, r2||{}, r3||{});
+    ST.routes = await fetch(`${DB}/routes.json?orderBy="date"&equalTo="${dk}"`)
+      .then(r=>r.json()).catch(()=>({})) || {};
   } catch (e) {
     ST.routes = {};
   }
@@ -472,18 +467,13 @@ function allDrivers() {
   return [...names].sort();
 }
 
-// Same valid-date window resolveStops() uses (today ± 1 day by default,
-// since no date has been picked yet at the "Who are you?" screen) — so any
-// asset offered here is guaranteed to actually resolve stops.
+// The app only shows the current day's deliveries — so assets offered here
+// are scoped to today only (or the selected day, once one has been picked).
 function allAssets() {
   const dk = todayKey();
-  const dkDate = new Date(dk + 'T12:00:00');
-  const prev = localDateKey(new Date(dkDate - 864e5));
-  const next = localDateKey(new Date(+dkDate + 864e5));
-  const validDates = new Set([dk, prev, next]);
   const assets = new Set();
   Object.entries(ST.routes).forEach(([rid, r]) => {
-    if (!r || !validDates.has(r.date) || rid === 'UNASSIGNED') return;
+    if (!r || r.date !== dk || rid === 'UNASSIGNED') return;
     const asset = [r.asset, r.assetDescription].filter(Boolean).join(' ').trim();
     if (asset) assets.add(asset);
   });
@@ -492,14 +482,9 @@ function allAssets() {
 
 function driverIndex() {
   const dk = activeKey();
-  const dkDate = new Date(dk + 'T12:00:00');
-  const prev = localDateKey(new Date(dkDate - 864e5));
-  const next = localDateKey(new Date(+dkDate + 864e5));
-  const validDates = new Set([dk, prev, next]);
-
   const map = {};
   Object.entries(ST.routes).forEach(([rid, r]) => {
-    if (!r || !validDates.has(r.date)) return;
+    if (!r || r.date !== dk) return;
     if (rid === 'UNASSIGNED') return;
     const drv = (r.driverName || '').trim();
     if (!drv) return;
@@ -654,13 +639,9 @@ function pickAsset(a) { ST.asset = a; resolveStops(); }
 // ── RESOLVE STOPS for chosen driver + asset ─────────────────────────────────
 function resolveStops() {
   const dk = activeKey();
-  const dkDate = new Date(dk + 'T12:00:00');
-  const validDates = new Set([dk,
-    localDateKey(new Date(dkDate - 864e5)),
-    localDateKey(new Date(+dkDate + 864e5))]);
   const stops = [];
   Object.entries(ST.routes).forEach(([rid, r]) => {
-    if (!r || !validDates.has(r.date) || rid === 'UNASSIGNED') return;
+    if (!r || r.date !== dk || rid === 'UNASSIGNED') return;
     const asset = [r.asset, r.assetDescription].filter(Boolean).join(' ').trim() || '—';
     const drvMatch = (r.driverName || '').trim() === ST.driver;
     const norm = s => s.trim().toLowerCase().replace(/\s+/g, ' ');
@@ -1047,20 +1028,12 @@ async function pollForNewStops() {
   if (!ST.driver || !ST.asset) return; // not yet selected — nothing to do
   try {
     const dk = activeKey();
-    const dkDate = new Date(dk + 'T12:00:00');
-    const prev = localDateKey(new Date(dkDate - 864e5));
-    const next = localDateKey(new Date(+dkDate + 864e5));
-    const validDates = new Set([dk, prev, next]);
-    const [f1, f2, f3] = await Promise.all([
-      fetch(`${DB}/routes.json?orderBy="date"&equalTo="${prev}"`).then(r=>r.json()).catch(()=>({})),
-      fetch(`${DB}/routes.json?orderBy="date"&equalTo="${dk}"`).then(r=>r.json()).catch(()=>({})),
-      fetch(`${DB}/routes.json?orderBy="date"&equalTo="${next}"`).then(r=>r.json()).catch(()=>({})),
-    ]);
-    const fresh = Object.assign({}, f1||{}, f2||{}, f3||{});
+    const fresh = await fetch(`${DB}/routes.json?orderBy="date"&equalTo="${dk}"`)
+      .then(r=>r.json()).catch(()=>({})) || {};
     let newStopsFound = false;
 
     Object.entries(fresh).forEach(([rid, r]) => {
-      if (!r || !validDates.has(r.date) || rid === 'UNASSIGNED') return;
+      if (!r || r.date !== dk || rid === 'UNASSIGNED') return;
       const asset = [r.asset, r.assetDescription].filter(Boolean).join(' ').trim() || '—';
       const drvMatch = (r.driverName || '').trim() === ST.driver;
       const assetMatch = asset === ST.asset;
