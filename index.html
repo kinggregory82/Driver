@@ -215,7 +215,7 @@
 <header>
   <div>
     <div class="h-title">BCC Driver Submit</div>
-    <div class="h-sub">Delivery Status &amp; Photos</div>
+    <div class="h-sub">Delivery Status &amp; Photos · <span id="buildTag"></span></div>
   </div>
   <div class="h-fallback">Fallback Mode</div>
 </header>
@@ -234,7 +234,13 @@
 <script>
 // ── CONFIG ────────────────────────────────────────────────────────────────
 const DB = 'https://bccsms-27c55-default-rtdb.firebaseio.com';
-const EMAIL_RELAY = 'https://script.google.com/macros/s/AKfycbz7kvrq_wvLPiWPW2QoU05xIRwTF5fiw3FjPRjVfvcXzNaQRMaV117cvy5iJ9VFU5Ky5A/exec';
+// Bump this on every hand-off — it renders in the header, so one look at the
+// phone says which copy is live instead of view-source hunting after a deploy.
+const BUILD_TAG = 'b.2026-08-14b';
+
+// Photos are POSTed to the Apps Script relay below, which mails them and
+// files them in Drive. No Firebase Storage, no local server, no tunnel.
+const EMAIL_RELAY = 'https://script.google.com/macros/s/AKfycbxIHglbhBVUmssuNmXadh5yVB9qAOuQzHgtdNOvKay-LDinY5DdBiKuCGa5BjcHfjHw/exec';
 const DQ_ENDPOINT = 'https://dqtapim.azure-api.net/BensContractorCenter?subscription-key=b14ba32fef4b4c959d044af313e2b220';
 
 // ── OFFLINE QUEUE ────────────────────────────────────────────────────────────
@@ -244,7 +250,24 @@ function queueLoad() {
   try { return JSON.parse(localStorage.getItem(QUEUE_KEY) || '[]'); } catch { return []; }
 }
 function queueSave(q) {
-  try { localStorage.setItem(QUEUE_KEY, JSON.stringify(q)); } catch(e) { console.warn('queue save failed', e); }
+  try {
+    localStorage.setItem(QUEUE_KEY, JSON.stringify(q));
+  } catch(e) {
+    // Queued base64 photos can blow the ~5MB localStorage quota. Losing the
+    // whole queue is far worse than losing the pictures, so drop the photos
+    // and keep the delivery records.
+    console.warn('queue save failed — retrying without photos', e);
+    try {
+      const lean = q.map(i => {
+        const c = { ...i };
+        if (c.relayPayload)         c.relayPayload = { ...c.relayPayload, photos: [], photosDropped: true };
+        if (c.payload?.relayPayload) c.payload = { ...c.payload, relayPayload: { ...c.payload.relayPayload, photos: [], photosDropped: true } };
+        return c;
+      });
+      localStorage.setItem(QUEUE_KEY, JSON.stringify(lean));
+      toast('Storage full — records queued, photos dropped', 'err');
+    } catch(e2) { console.warn('queue save failed hard', e2); }
+  }
 }
 function queueAdd(item) {
   const q = queueLoad();
@@ -275,7 +298,35 @@ async function retryQueue() {
   let sent = 0, failed = 0;
   for (const item of q) {
     try {
-      await dbPush(`routes/${item.payload.routeId}/stops/${item.payload.stopId}/driverSubmissions`, item.payload.submission);
+      // Relay-only retry: the record already saved, the email/photos didn't go
+      if (item.relayRetry) {
+        const res = await sendToRelay(item.relayPayload);
+        const urls = Array.isArray(res.photoUrls) ? res.photoUrls : [];
+        await dbPatch(item.path, {
+          photos: urls,
+          photoCount: urls.length || (item.relayPayload.photos || []).length,
+          photosPending: 0,
+          emailSent: true,
+          emailed: true,
+        });
+        queueRemove(item.queuedAt);
+        sent++;
+        continue;
+      }
+
+      // Full retry — send the relay first if it never went, then the record
+      const sub = { ...item.payload.submission };
+      if (!item.payload.relaySent && item.payload.relayPayload) {
+        const res = await sendToRelay(item.payload.relayPayload);
+        const urls = Array.isArray(res.photoUrls) ? res.photoUrls : [];
+        sub.photos = urls;
+        sub.photoCount = urls.length || (item.payload.relayPayload.photos || []).length;
+        sub.photosPending = 0;
+        sub.emailSent = true;
+        sub.emailed = true;
+      }
+
+      await dbPush(`routes/${item.payload.routeId}/stops/${item.payload.stopId}/driverSubmissions`, sub);
       queueRemove(item.queuedAt);
       // Mark stop as submitted in draft state
       if (item.stopId && ST.draft[item.stopId]) {
@@ -433,6 +484,40 @@ function compressImage(file) {
     img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('image load failed')); };
     img.src = url;
   });
+}
+
+// ── PHOTO SEND → APPS SCRIPT RELAY ───────────────────────────────
+// Photos are POSTed as base64 to the Apps Script web app, which emails them
+// and drops them in a Drive folder, then hands back the Drive URLs.
+// Nothing runs on Greg's PC. No Firebase Storage. No tunnel.
+//
+// IMPORTANT: Content-Type is text/plain on purpose. application/json makes the
+// browser send a CORS preflight, which Apps Script web apps do not answer, so
+// the request dies before it ever reaches doPost(). text/plain is a "simple"
+// request and goes straight through. Apps Script reads e.postData.contents
+// and JSON.parses it either way.
+async function sendToRelay(payload, timeoutMs) {
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), timeoutMs || 60000);
+  try {
+    const r = await fetch(EMAIL_RELAY, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify(payload),
+      signal: ctl.signal,
+    });
+    if (!r.ok) throw new Error(`Relay HTTP ${r.status}`);
+    const txt = await r.text();
+    try { return JSON.parse(txt); } catch { return {}; }
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+// Strip the "data:image/jpeg;base64," prefix — Apps Script wants raw base64
+function stripDataUrl(dataUrl) {
+  const i = dataUrl.indexOf(',');
+  return i === -1 ? dataUrl : dataUrl.slice(i + 1);
 }
 
 // ── LOAD ──────────────────────────────────────────────────────────────────
@@ -779,38 +864,61 @@ async function submitStop(stopId) {
 
   // Device clock captured at the moment of submit — locked into the record
   const now = new Date();
+  const stamp = now.toISOString();
+
+  // Route ids resolved up front so the offline path can see them too
+  const isPastDq    = s.routeId.startsWith('dq_past_');
+  const realRouteId = isPastDq ? s.routeId.replace('dq_past_', '') : s.routeId;
+
+  // ── Build the relay payload: photos ride along as base64 ────────────────
+  const relayPayload = {
+    driver:       ST.driver,
+    asset:        ST.asset,
+    status:       d.status,
+    orderNumber:  s.orderNumber || '',
+    customerName: s.customerName || '',
+    address:      s.address || '',
+    arrivalTime:  d.arrivalTime || '',
+    deliveryTime: d.deliveryTime || '',
+    notes:        d.notes || '',
+    submittedAt:  now.toLocaleString(),
+    submittedAtIso: stamp,
+    stopId:       s.stopId,
+    photos:       d.photos.map(stripDataUrl),   // raw base64 JPEGs
+  };
+
+  // ── Send it. The relay emails the photos and files them in Drive, then
+  // hands back Drive URLs so the dispatcher board still has something to
+  // open later. If it fails, the photos go to the offline queue. ──
+  let photoUrls = [];
+  let photosPending = null;
+  let relayOk = false;
+  try {
+    if (btn) btn.textContent = d.photos.length ? `Sending ${d.photos.length} photo(s)…` : 'Sending…';
+    const res = await sendToRelay(relayPayload);
+    relayOk = true;
+    if (Array.isArray(res.photoUrls)) photoUrls = res.photoUrls;
+  } catch (e) {
+    console.warn('Relay failed — queuing:', e);
+    if (d.photos.length) photosPending = d.photos.slice();
+  }
+
   const submission = {
     driver:       ST.driver,
     asset:        ST.asset,
     status:       d.status,
-    photos:       d.photos,                       // base64 data URLs
-    photoCount:   d.photos.length,
-    submittedAt:  now.toISOString(),              // immutable timestamp
+    photos:       photoUrls,                      // Drive URLs from the relay
+    photoCount:   photoUrls.length || (relayOk ? d.photos.length : 0),
+    photosPending: photosPending ? photosPending.length : 0,
+    emailSent:    relayOk,
+    submittedAt:  stamp,                          // immutable timestamp
     submittedAtLocal: now.toLocaleString(),       // human readable, device tz
     orderNumber:  s.orderNumber || '',
     customerName: s.customerName || '',
     address:      s.address || '',
     source:       'driver-fallback',
-    emailed:      false,                          // poller flips this after emailing
+    emailed:      relayOk,                        // relay already sent it
   };
-
-  // ── Fire email notification immediately via Apps Script relay ──
-  fetch(EMAIL_RELAY, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      driver:       ST.driver,
-      asset:        ST.asset,
-      status:       d.status,
-      orderNumber:  s.orderNumber || '',
-      customerName: s.customerName || '',
-      address:      s.address || '',
-      arrivalTime:  d.arrivalTime || '',
-      deliveryTime: d.deliveryTime || '',
-      notes:        d.notes || '',
-      submittedAt:  now.toLocaleString(),
-    }),
-  }).catch(e => console.warn('Email relay failed:', e));
 
   // ── 1. Write back to DQ (status + timestamps) ───────────────────────────
   const dqOrderId = s.dqOrderId || null;
@@ -826,25 +934,33 @@ async function submitStop(stopId) {
   }
 
   try {
-    // ── 2. Write directly to Firebase — dq_poller_v2.py's
-    // process_driver_submissions() scans routes/*/stops/*/driverSubmissions
-    // and emails each one (with photos attached) once emailed=false is seen,
-    // so no separate submission server / tunnel is needed for this step. ──
-    const isPastDq = s.routeId.startsWith('dq_past_');
-    const realRouteId = isPastDq ? s.routeId.replace('dq_past_', '') : s.routeId;
-
+    // ── 2. Write the record to Firebase RTDB. URLs only — never base64, so
+    // the free RTDB tier stays well inside its 1GB. The relay already sent
+    // the email, so the poller is not in this path at all. ──
     if (btn) { btn.textContent = 'Sending…'; btn.disabled = true; }
 
-    await dbPush(`routes/${realRouteId}/stops/${s.stopId}/driverSubmissions`, {
+    const pushed = await dbPush(`routes/${realRouteId}/stops/${s.stopId}/driverSubmissions`, {
       ...submission, dqOrderId, dqWriteBack: dqResult,
     });
+
+    // Record saved but the relay didn't answer — retry just the relay and
+    // patch the result onto this same record, so nothing submits twice.
+    if (!relayOk && pushed && pushed.name) {
+      queueAdd({
+        stopId,
+        relayRetry: true,
+        path: `routes/${realRouteId}/stops/${s.stopId}/driverSubmissions/${pushed.name}`,
+        relayPayload,
+      });
+    }
 
     if (btn) { btn.textContent = 'Submit'; btn.disabled = false; }
     d.submittedAt = submission.submittedAt;
     d.submittedAtLabel = now.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
     refreshStop(stopId);
     const dqMsg = dqOrderId ? (dqResult.orderUpdated ? ' · DQ ✓' : ' · DQ partial') : '';
-    toast(`Stop submitted ✓${dqMsg}`, 'ok');
+    const photoMsg = !relayOk && d.photos.length ? ' · photos queued' : '';
+    toast(`Stop submitted ✓${dqMsg}${photoMsg}`, 'ok');
   } catch (e) {
     console.error('Submit failed — queuing offline:', e);
     // Save to offline queue — will retry automatically
@@ -855,6 +971,8 @@ async function submitStop(stopId) {
         routeId:    realRouteId,
         stopId:     s.stopId,
         isPast:     isPastDq,
+        relayPayload,
+        relaySent:  relayOk,
       }
     });
     // Mark as submitted locally so driver sees success
@@ -995,6 +1113,8 @@ function resetAll() {
 }
 
 // ── BOOT ────────────────────────────────────────────────────────────────────
+const _bt = document.getElementById('buildTag');
+if (_bt) _bt.textContent = BUILD_TAG;
 load();
 
 // ── Live refresh — polls Firebase every 120s for new stops ──────────────────
