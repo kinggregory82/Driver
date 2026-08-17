@@ -45,11 +45,6 @@
   .step-label::before { content: ''; width: 18px; height: 2px; background: var(--red); }
   .step-label:first-child { margin-top: 4px; }
 
-  .group-label { font-size: 13px; font-weight: 700; letter-spacing: .06em;
-    text-transform: uppercase; color: #cfd4da; margin: 18px 2px 8px; }
-  .group-label.muted { color: #7b828c; }
-  .group-label:first-of-type { margin-top: 10px; }
-
   /* SELECT GRID (drivers / assets) */
   .pick-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
   .pick {
@@ -241,7 +236,7 @@
 const DB = 'https://bccsms-27c55-default-rtdb.firebaseio.com';
 // Bump this on every hand-off — it renders in the header, so one look at the
 // phone says which copy is live instead of view-source hunting after a deploy.
-const BUILD_TAG = 'b.2026-08-17a';
+const BUILD_TAG = 'b.2026-08-17d';
 
 // Photos are POSTed to the Apps Script relay below, which mails them and
 // files them in Drive. No Firebase Storage, no local server, no tunnel.
@@ -556,44 +551,47 @@ function dayWindow(key) {
   ]);
 }
 
-// EVERY driver name that has ever appeared on a route, of any date. This is the
-// historical roster, not today's crew — it is the fallback list, never the
-// first thing shown.
-function allDrivers() {
-  const names = new Set();
-  Object.entries(ST.routes).forEach(([rid, r]) => {
-    if (!r || rid === 'UNASSIGNED') return;
-    const drv = (r.driverName || '').trim();
-    if (drv) names.add(drv);
-  });
-  return [...names].sort();
-}
-
-// Drivers who actually have a route in the window. THIS is what the picker
-// leads with — the old screen listed the whole history alphabetically, so the
-// same names sat at the top every single day whoever was working, and a driver
-// could pick a name that resolves to no stops at all.
+// ── THE ROSTER ───────────────────────────────────────────────────────────────
+// The driver list used to be built from whatever `driverName` DQ happened to
+// put on recent routes. DQ leaves that field empty on a great many orders — the
+// poller logs a warning every time — so the list was never the crew, it was a
+// by-product of DQ's data quality, and it even carried "Unknown Driver" as if
+// that were a person.
 //
-// It cannot be the ONLY list: DQ often returns no driver.displayName (the
-// poller logs a warning per order), so on those days this comes back empty and
-// nobody could sign in.
-function todaysDrivers() {
-  const valid = dayWindow(activeKey());
+// This is the actual roster. Edit it here when someone joins or leaves; the
+// manual-entry field below the grid covers a temp or a rental driver.
+const DRIVERS = [
+  'Brad Nugent',
+  'Chad Billot',
+  'Gary Rogers',
+  'Gunner Stewart',
+  'Josh Allen',
+  'Larry Reid',
+  'Mike Desutter',
+  'Mitch Warczinsky',
+  'Nick Harris',
+  'Tim Bailey',
+  'Tyler Begley',
+];
+
+// Kept for anyone DQ names who is not on the roster — a rental driver, or a
+// name typed in manually on a previous run — so they can still be picked.
+function extraDrivers() {
   const names = new Set();
   Object.entries(ST.routes).forEach(([rid, r]) => {
     if (!r || rid === 'UNASSIGNED') return;
-    if (!valid.has(r.date)) return;
     const drv = (r.driverName || '').trim();
-    if (drv) names.add(drv);
+    if (drv && DRIVERS.indexOf(drv) < 0 && drv.toLowerCase() !== 'unknown driver') {
+      names.add(drv);
+    }
   });
   return [...names].sort();
 }
 
-// Same valid-date window resolveStops() uses (today ± 1 day by default,
-// since no date has been picked yet at the "Who are you?" screen) — so any
-// asset offered here is guaranteed to actually resolve stops.
+// Every truck with a route in the window, so anything offered here is
+// guaranteed to resolve stops. Follows whichever date is showing.
 function allAssets() {
-  const validDates = dayWindow(todayKey());
+  const validDates = dayWindow(activeKey());
   const assets = new Set();
   Object.entries(ST.routes).forEach(([rid, r]) => {
     if (!r || !validDates.has(r.date) || rid === 'UNASSIGNED') return;
@@ -603,47 +601,22 @@ function allAssets() {
   return [...assets].sort();
 }
 
-function driverIndex() {
-  const validDates = dayWindow(activeKey());
-  const map = {};
-  Object.entries(ST.routes).forEach(([rid, r]) => {
-    if (!r || !validDates.has(r.date)) return;
-    if (rid === 'UNASSIGNED') return;
-    const drv = (r.driverName || '').trim();
-    if (!drv) return;
-    const asset = [r.asset, r.assetDescription].filter(Boolean).join(' ').trim() || '—';
-    map[drv] = map[drv] || {};
-    map[drv][asset] = map[drv][asset] || [];
-    map[drv][asset].push(rid);
-  });
-  return map;
-}
+
 
 // ── RENDER: PICK DRIVER ──────────────────────────────────────────────────────
-// Today's crew first, everyone else underneath. Nobody is locked out on a day
-// DQ sends no driver names, and nobody has to hunt past two years of leavers to
-// find themselves.
+// Every driver, one list, no grouping.
 function renderPickDriver() {
   const app = document.getElementById('app');
-  const today = todaysDrivers();
-  const rest = allDrivers().filter(d => today.indexOf(d) < 0);
+  const drivers = DRIVERS.concat(extraDrivers());
   const assets = allAssets();
 
-  const grid = list => `<div class="pick-grid">` + list.map(d =>
-    `<button class="pick" onclick="pickDriver('${esc(d)}')">
-      <span class="nm">${esc(d)}</span>
-    </button>`
-  ).join('') + `</div>`;
-
   let html = `<div class="step-label">Who are you?</div>`;
-  if (today.length) {
-    html += `<div class="group-label">Running today</div>` + grid(today);
-    if (rest.length) {
-      html += `<div class="group-label muted">Other drivers</div>` + grid(rest);
-    }
-  } else if (rest.length) {
-    html += `<div class="note">No routes have a driver name on them today.
-      Pick your name below, or enter it manually.</div>` + grid(rest);
+  if (drivers.length) {
+    html += `<div class="pick-grid">` + drivers.map(d =>
+      `<button class="pick" onclick="pickDriver('${esc(d)}')">
+        <span class="nm">${esc(d)}</span>
+      </button>`
+    ).join('') + `</div>`;
   } else {
     html += `<div class="note">No drivers found. Use manual entry below.</div>`;
   }
@@ -706,13 +679,14 @@ function pickManual() {
 }
 
 
+// THE DRIVER NAME IS FOR THE RECORD, NOT FOR MATCHING. It goes on the
+// submission and the email; it decides nothing. DQ leaves driverName empty on a
+// great many routes, so matching on it stranded drivers on "no stops found"
+// through no fault of theirs. The ASSET decides what they see.
 function pickDriver(d) {
   ST.driver = d;
-  ST.selectedDate = null; // default to today when picking a driver
-  const idx = driverIndex();
-  const assets = Object.keys(idx[d] || {});
-  if (assets.length === 1) { ST.asset = assets[0]; resolveStops(); }
-  else renderPickAsset(assets);
+  ST.selectedDate = null;   // default to today when picking a driver
+  renderPickAsset(allAssets());
 }
 
 // ── RENDER: PICK ASSET ──────────────────────────────────────────────────────
@@ -731,16 +705,21 @@ function renderPickAsset(assets) {
       <input type="date" id="date-pick" value="${active}" max="${today}" onchange="changeDate(this.value)">
       ${isPast ? `<span class="date-past-badge">Past Route</span>` : `<button class="date-today-btn" onclick="changeDate('')">Today</button>`}
     </div>
-    <div class="step-label">Which asset?</div>
-    <div class="pick-grid">` +
-    assets.sort().map(a => `<button class="pick" onclick="pickAsset('${esc(a)}')">
-      <span class="nm">${esc(a)}</span>
-    </button>`).join('') + `</div>`;
+    <div class="step-label">Which truck?</div>` +
+    (assets.length
+      ? `<div class="pick-grid">` +
+        assets.sort().map(a => `<button class="pick" onclick="pickAsset('${esc(a)}')">
+          <span class="nm">${esc(a)}</span>
+        </button>`).join('') + `</div>`
+      : `<div class="note">No trucks have routes on this date. Change the date above,
+         or use manual entry from the driver screen.</div>`);
 }
 
 function pickAsset(a) { ST.asset = a; resolveStops(); }
 
-// ── RESOLVE STOPS for chosen driver + asset ─────────────────────────────────
+// ── RESOLVE STOPS — BY ASSET ────────────────────────────────────────────────
+// Whatever is on the truck is what the driver sees. The name he picked is not
+// consulted here at all.
 function resolveStops() {
   const dk = activeKey();
   const dkDate = new Date(dk + 'T12:00:00');
@@ -751,11 +730,8 @@ function resolveStops() {
   Object.entries(ST.routes).forEach(([rid, r]) => {
     if (!r || !validDates.has(r.date) || rid === 'UNASSIGNED') return;
     const asset = [r.asset, r.assetDescription].filter(Boolean).join(' ').trim() || '—';
-    const drvMatch = (r.driverName || '').trim() === ST.driver;
     const norm = s => s.trim().toLowerCase().replace(/\s+/g, ' ');
-    const assetMatch = norm(asset) === norm(ST.asset);
-    // In normal mode require driver+asset match. In manual mode, asset match alone is enough.
-    if (ST.manualEntry ? assetMatch : (drvMatch && assetMatch)) {
+    if (norm(asset) === norm(ST.asset)) {
       if (r.stops) Object.entries(r.stops).forEach(([sid, s]) =>
         stops.push({ routeId: rid, stopId: sid, ...s }));
     }
@@ -786,8 +762,8 @@ function renderStops() {
     <div class="step-label">Update each stop</div>`;
 
   if (!ST.stops.length) {
-    html += `<div class="note">No stops found for ${esc(ST.driver)} on this date.<br>
-      Try a different date above, or use Change to pick again.</div>`;
+    html += `<div class="note">Nothing on ${esc(ST.asset)} for this date.<br>
+      Try a different date above, or use Change to pick a different truck.</div>`;
     app.innerHTML = html;
     return;
   }
@@ -1042,11 +1018,7 @@ async function changeDate(val) {
     // Re-init draft for new stops
     resolveStops();
   } else if (ST.driver) {
-    // Re-render asset picker with updated date
-    const idx = driverIndex();
-    const assets = Object.keys(idx[ST.driver] || {});
-    if (assets.length === 1) { ST.asset = assets[0]; resolveStops(); }
-    else renderPickAsset(assets);
+    renderPickAsset(allAssets());   // trucks for the new date
   } else {
     renderPickDriver();
   }
@@ -1137,7 +1109,7 @@ async function ensurePastRoutes(dateKey) {
       };
     }
 
-    // Merge into ST.routes under a synthetic key so driverIndex() finds them
+    // Merge into ST.routes under a synthetic key so the pickers find them
     for (const [rid, route] of Object.entries(routeMap)) {
       ST.routes['dq_past_' + rid] = route;
     }
@@ -1179,10 +1151,10 @@ async function pollForNewStops() {
 
     Object.entries(fresh).forEach(([rid, r]) => {
       if (!r || !validDates.has(r.date) || rid === 'UNASSIGNED') return;
+      // Same rule as resolveStops: the truck decides, the name does not.
       const asset = [r.asset, r.assetDescription].filter(Boolean).join(' ').trim() || '—';
-      const drvMatch = (r.driverName || '').trim() === ST.driver;
-      const assetMatch = asset === ST.asset;
-      if (!(ST.manualEntry ? assetMatch : (drvMatch && assetMatch))) return;
+      const norm = s => s.trim().toLowerCase().replace(/\s+/g, ' ');
+      if (norm(asset) !== norm(ST.asset)) return;
 
       if (r.stops) Object.entries(r.stops).forEach(([sid, s]) => {
         // Only add stops we haven't seen yet
