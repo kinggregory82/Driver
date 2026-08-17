@@ -45,6 +45,11 @@
   .step-label::before { content: ''; width: 18px; height: 2px; background: var(--red); }
   .step-label:first-child { margin-top: 4px; }
 
+  .group-label { font-size: 13px; font-weight: 700; letter-spacing: .06em;
+    text-transform: uppercase; color: #cfd4da; margin: 18px 2px 8px; }
+  .group-label.muted { color: #7b828c; }
+  .group-label:first-of-type { margin-top: 10px; }
+
   /* SELECT GRID (drivers / assets) */
   .pick-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
   .pick {
@@ -236,7 +241,7 @@
 const DB = 'https://bccsms-27c55-default-rtdb.firebaseio.com';
 // Bump this on every hand-off — it renders in the header, so one look at the
 // phone says which copy is live instead of view-source hunting after a deploy.
-const BUILD_TAG = 'b.2026-08-14c';
+const BUILD_TAG = 'b.2026-08-17a';
 
 // Photos are POSTed to the Apps Script relay below, which mails them and
 // files them in Drive. No Firebase Storage, no local server, no tunnel.
@@ -539,8 +544,21 @@ async function load() {
   renderPickDriver();
 }
 
-// Build driver -> [{asset, routeId}] map from selected date's routes
-// All unique driver names across all routes in Firebase
+// The date window every driver-facing list works to: today, plus a day either
+// side, so a late finish or an early start still finds its stops.
+function dayWindow(key) {
+  const dk = key || todayKey();
+  const dkDate = new Date(dk + 'T12:00:00');
+  return new Set([
+    dk,
+    localDateKey(new Date(dkDate - 864e5)),
+    localDateKey(new Date(+dkDate + 864e5)),
+  ]);
+}
+
+// EVERY driver name that has ever appeared on a route, of any date. This is the
+// historical roster, not today's crew — it is the fallback list, never the
+// first thing shown.
 function allDrivers() {
   const names = new Set();
   Object.entries(ST.routes).forEach(([rid, r]) => {
@@ -551,15 +569,31 @@ function allDrivers() {
   return [...names].sort();
 }
 
+// Drivers who actually have a route in the window. THIS is what the picker
+// leads with — the old screen listed the whole history alphabetically, so the
+// same names sat at the top every single day whoever was working, and a driver
+// could pick a name that resolves to no stops at all.
+//
+// It cannot be the ONLY list: DQ often returns no driver.displayName (the
+// poller logs a warning per order), so on those days this comes back empty and
+// nobody could sign in.
+function todaysDrivers() {
+  const valid = dayWindow(activeKey());
+  const names = new Set();
+  Object.entries(ST.routes).forEach(([rid, r]) => {
+    if (!r || rid === 'UNASSIGNED') return;
+    if (!valid.has(r.date)) return;
+    const drv = (r.driverName || '').trim();
+    if (drv) names.add(drv);
+  });
+  return [...names].sort();
+}
+
 // Same valid-date window resolveStops() uses (today ± 1 day by default,
 // since no date has been picked yet at the "Who are you?" screen) — so any
 // asset offered here is guaranteed to actually resolve stops.
 function allAssets() {
-  const dk = todayKey();
-  const dkDate = new Date(dk + 'T12:00:00');
-  const prev = localDateKey(new Date(dkDate - 864e5));
-  const next = localDateKey(new Date(+dkDate + 864e5));
-  const validDates = new Set([dk, prev, next]);
+  const validDates = dayWindow(todayKey());
   const assets = new Set();
   Object.entries(ST.routes).forEach(([rid, r]) => {
     if (!r || !validDates.has(r.date) || rid === 'UNASSIGNED') return;
@@ -570,12 +604,7 @@ function allAssets() {
 }
 
 function driverIndex() {
-  const dk = activeKey();
-  const dkDate = new Date(dk + 'T12:00:00');
-  const prev = localDateKey(new Date(dkDate - 864e5));
-  const next = localDateKey(new Date(+dkDate + 864e5));
-  const validDates = new Set([dk, prev, next]);
-
+  const validDates = dayWindow(activeKey());
   const map = {};
   Object.entries(ST.routes).forEach(([rid, r]) => {
     if (!r || !validDates.has(r.date)) return;
@@ -590,19 +619,31 @@ function driverIndex() {
   return map;
 }
 
-// ── RENDER: PICK DRIVER — shows all known drivers, no date filter ────────────
+// ── RENDER: PICK DRIVER ──────────────────────────────────────────────────────
+// Today's crew first, everyone else underneath. Nobody is locked out on a day
+// DQ sends no driver names, and nobody has to hunt past two years of leavers to
+// find themselves.
 function renderPickDriver() {
   const app = document.getElementById('app');
-  const drivers = allDrivers();
+  const today = todaysDrivers();
+  const rest = allDrivers().filter(d => today.indexOf(d) < 0);
   const assets = allAssets();
 
+  const grid = list => `<div class="pick-grid">` + list.map(d =>
+    `<button class="pick" onclick="pickDriver('${esc(d)}')">
+      <span class="nm">${esc(d)}</span>
+    </button>`
+  ).join('') + `</div>`;
+
   let html = `<div class="step-label">Who are you?</div>`;
-  if (drivers.length) {
-    html += `<div class="pick-grid">` + drivers.map(d =>
-      `<button class="pick" onclick="pickDriver('${esc(d)}')">
-        <span class="nm">${esc(d)}</span>
-      </button>`
-    ).join('') + `</div>`;
+  if (today.length) {
+    html += `<div class="group-label">Running today</div>` + grid(today);
+    if (rest.length) {
+      html += `<div class="group-label muted">Other drivers</div>` + grid(rest);
+    }
+  } else if (rest.length) {
+    html += `<div class="note">No routes have a driver name on them today.
+      Pick your name below, or enter it manually.</div>` + grid(rest);
   } else {
     html += `<div class="note">No drivers found. Use manual entry below.</div>`;
   }
